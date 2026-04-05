@@ -6,7 +6,7 @@
 #include "TargetBehaviorComponent.generated.h"
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
-class TACTICALFRAMEWORK_API UTargetBehaviorComponent : public UActorComponent
+class DYNAMICPAYLOADSYSTEM_API UTargetBehaviorComponent : public UActorComponent
 {
 	GENERATED_BODY()
 

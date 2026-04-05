@@ -10,7 +10,7 @@ class UTargetBehaviorComponent;
 class UMovableTargetComponent;
 
 UCLASS()
-class TACTICALFRAMEWORK_API ATargetActor : public AActor
+class DYNAMICPAYLOADSYSTEM_API ATargetActor : public AActor
 {
 	GENERATED_BODY()
 

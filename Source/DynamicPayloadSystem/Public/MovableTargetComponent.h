@@ -26,7 +26,7 @@ enum class EPatrolAreaState : uint8
 };
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
-class TACTICALFRAMEWORK_API UMovableTargetComponent : public USceneComponent
+class DYNAMICPAYLOADSYSTEM_API UMovableTargetComponent : public USceneComponent
 {
 	GENERATED_BODY()
 

@@ -18,7 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 );
 
 UCLASS(ClassGroup = (Combat), meta = (BlueprintSpawnableComponent))
-class TACTICALFRAMEWORK_API UDamagableComponent : public UActorComponent
+class DYNAMICPAYLOADSYSTEM_API UDamagableComponent : public UActorComponent
 {
 	GENERATED_BODY()
 

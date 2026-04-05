@@ -2,14 +2,14 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0.0",
-	"FriendlyName": "Tactical Framework",
+	"FriendlyName": "Dynamic Payload & Reactive Target System",
 	"Description": "Modular payload delivery, radial damage, AI convoy movement, and mission management for Unreal Engine 5.",
 	"Category": "Gameplay",
 	"CreatedBy": "Tanushk",
 	"CreatedByURL": "https://github.com/Tanushk-S",
-	"DocsURL": "https://github.com/Tanushk-S/TacticalFramework/blob/main/README.md",
+	"DocsURL": "https://github.com/Tanushk-S/DynamicPayloadSystem/blob/main/README.md",
 	"MarketplaceURL": "",
-	"SupportURL": "https://github.com/Tanushk-S/TacticalFramework/issues",
+	"SupportURL": "https://github.com/Tanushk-S/DynamicPayloadSystem/issues",
 	"EngineVersion": "5.5.0",
 	"CanContainContent": true,
 	"IsBetaVersion": false,
@@ -24,7 +24,7 @@
 	],
 	"Modules": [
 		{
-			"Name": "TacticalFramework",
+			"Name": "DynamicPayloadSystem",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"PlatformAllowList": [

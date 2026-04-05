@@ -7,7 +7,7 @@
 class UBoxComponent;
 
 UCLASS()
-class TACTICALFRAMEWORK_API APatrolAreaVolume : public AActor
+class DYNAMICPAYLOADSYSTEM_API APatrolAreaVolume : public AActor
 {
 	GENERATED_BODY()
 

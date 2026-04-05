@@ -2,7 +2,7 @@
 
 #include "Modules/ModuleManager.h"
 
-class FTacticalFrameworkModule : public IModuleInterface
+class FDynamicPayloadSystemModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override;

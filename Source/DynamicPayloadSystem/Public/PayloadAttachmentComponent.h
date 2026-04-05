@@ -14,7 +14,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 );
 
 UCLASS(ClassGroup = (Gameplay), meta = (BlueprintSpawnableComponent))
-class TACTICALFRAMEWORK_API UPayloadAttachmentComponent : public UActorComponent
+class DYNAMICPAYLOADSYSTEM_API UPayloadAttachmentComponent : public UActorComponent
 {
 	GENERATED_BODY()
 

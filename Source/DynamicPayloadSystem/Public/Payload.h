@@ -8,7 +8,7 @@ class UStaticMeshComponent;
 class AExplosive;
 
 UCLASS()
-class TACTICALFRAMEWORK_API APayload : public AActor
+class DYNAMICPAYLOADSYSTEM_API APayload : public AActor
 {
 	GENERATED_BODY()
 

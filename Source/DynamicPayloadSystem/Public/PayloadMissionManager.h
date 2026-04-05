@@ -18,7 +18,7 @@ enum class EPayloadMissionState : uint8
 };
 
 UCLASS()
-class TACTICALFRAMEWORK_API APayloadMissionManager : public AActor
+class DYNAMICPAYLOADSYSTEM_API APayloadMissionManager : public AActor
 {
 	GENERATED_BODY()
 
