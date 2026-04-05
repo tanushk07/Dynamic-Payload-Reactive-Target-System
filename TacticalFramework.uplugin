@@ -1,0 +1,39 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "Tactical Framework",
+	"Description": "Modular payload delivery, radial damage, AI convoy movement, and mission management for Unreal Engine 5.",
+	"Category": "Gameplay",
+	"CreatedBy": "Tanushk",
+	"CreatedByURL": "https://github.com/Tanushk-S",
+	"DocsURL": "https://github.com/Tanushk-S/TacticalFramework/blob/main/README.md",
+	"MarketplaceURL": "",
+	"SupportURL": "https://github.com/Tanushk-S/TacticalFramework/issues",
+	"EngineVersion": "5.5.0",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"SupportedTargetPlatforms": [
+		"Win64",
+		"Linux",
+		"Mac",
+		"Android",
+		"IOS"
+	],
+	"Modules": [
+		{
+			"Name": "TacticalFramework",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Linux",
+				"Mac",
+				"Android",
+				"IOS"
+			]
+		}
+	]
+}

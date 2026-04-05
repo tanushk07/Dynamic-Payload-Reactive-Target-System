@@ -1,0 +1,35 @@
+# Unreal Engine generated files
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+
+# Build artifacts
+*.pdb
+*.lib
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.obj
+*.exe
+
+# IDE / Editor
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.user
+*.sdf
+*.opensdf
+
+# OS files
+Thumbs.db
+.DS_Store
+*.swp
+*~
+
+# Compiled shaders
+*.ushaderbytecode
