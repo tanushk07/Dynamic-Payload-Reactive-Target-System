@@ -1,0 +1,50 @@
+// Copyright (c) 2025 Tanushk. MIT License.
+
+using UnrealBuildTool;
+using System.IO;
+
+public class TacticalFramework : ModuleRules
+{
+	public TacticalFramework(ReadOnlyTargetRules Target) : base(Target)
+	{
+		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		// Ensures IWYU (Include-What-You-Use) compliance across all platforms
+		bEnforceIWYU = true;
+
+		PublicIncludePaths.AddRange(new string[]
+		{
+			Path.Combine(ModuleDirectory, "Public")
+		});
+
+		PrivateIncludePaths.AddRange(new string[]
+		{
+			Path.Combine(ModuleDirectory, "Private")
+		});
+
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"Niagara",
+			"PhysicsCore"
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"InputCore"
+		});
+
+		// Platform-specific configuration
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			// Windows-specific settings (none required currently)
+		}
+		else if (Target.Platform == UnrealTargetPlatform.Linux ||
+				 Target.Platform == UnrealTargetPlatform.Mac)
+		{
+			// Unix-specific settings (none required currently)
+		}
+	}
+}
