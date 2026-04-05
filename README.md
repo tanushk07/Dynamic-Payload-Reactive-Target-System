@@ -1,4 +1,4 @@
-# DynamicPayloadSystem â€” Unreal Engine 5 Plugin
+# DynamicPayloadSystem — Unreal Engine 5 Plugin
 
 A modular C++ plugin for **payload delivery, radial damage, AI convoy movement, and mission management** in Unreal Engine 5.
 
@@ -9,39 +9,39 @@ Built for drone simulations, aerial strike games, and any project that needs phy
 ## Features
 
 ### Explosion & Damage System
-- **Radial damage** with configurable inner/outer falloff radii (SI units â€” meters)
-- **Closest-point damage calculation** â€” uses `GetClosestPointOnCollision` instead of actor-origin distance, so large targets (bunkers, buildings) receive accurate damage even when explosions detonate on their surface
-- **Line-of-Sight occlusion** â€” targets behind cover receive 30% reduced damage via raycasts
-- **Directional shrapnel** â€” Dot Product-based damage multiplier for targets in the forward hemisphere
-- **Physics impulses** â€” `AddRadialImpulse` on all physics bodies in the blast radius
-- **Niagara VFX + Sound** â€” assign any Niagara System and SoundBase on the Blueprint
-- **Camera Shake** â€” two options:
-  - **Zero-code:** Assign a `CameraShake` class on the Explosive Blueprint â€” triggers automatically via `PlayWorldCameraShake`
+- **Radial damage** with configurable inner/outer falloff radii (SI units — meters)
+- **Closest-point damage calculation** — uses `GetClosestPointOnCollision` instead of actor-origin distance, so large targets (bunkers, buildings) receive accurate damage even when explosions detonate on their surface
+- **Line-of-Sight occlusion** — targets behind cover receive 30% reduced damage via raycasts
+- **Directional shrapnel** — Dot Product-based damage multiplier for targets in the forward hemisphere
+- **Physics impulses** — `AddRadialImpulse` on all physics bodies in the blast radius
+- **Niagara VFX + Sound** — assign any Niagara System and SoundBase on the Blueprint
+- **Camera Shake** — two options:
+  - **Zero-code:** Assign a `CameraShake` class on the Explosive Blueprint — triggers automatically via `PlayWorldCameraShake`
   - **Advanced:** Subscribe to the `OnExplosionTriggered` delegate for custom multi-camera/VR logic
 
 ### Payload System
 - **Drop-and-detonate payloads** with configurable fuse timers
-- **Dynamic hit detection** â€” armed payloads explode on impact with damageable targets
-- **Dangling physics mode** â€” payloads swing as a physics pendulum via `UPhysicsConstraintComponent` (ball-joint)
-- **Kinematic attach mode** â€” payloads attach rigidly as children (no physics overhead)
-- **Kamikaze mode** â€” owner actor explodes payload on collision with damageable target (configurable trigger mesh and minimum speed threshold)
-- **Velocity transfer** on detach â€” payload inherits owner velocity
+- **Dynamic hit detection** — armed payloads explode on impact with damageable targets
+- **Dangling physics mode** — payloads swing as a physics pendulum via `UPhysicsConstraintComponent` (ball-joint)
+- **Kinematic attach mode** — payloads attach rigidly as children (no physics overhead)
+- **Kamikaze mode** — owner actor explodes payload on collision with damageable target (configurable trigger mesh and minimum speed threshold)
+- **Velocity transfer** on detach — payload inherits owner velocity
 
 ### AI Target Movement
-- **Spline Patrol** â€” follow any `USplineComponent` with smooth arc-steering entry
-- **Area Patrol** â€” patrol randomly within a `PatrolAreaVolume` with realistic constant-arc turning (configurable `MinTurningRadius`)
-- **Convoy Follow** â€” chain multiple vehicles to follow a leader with proportional-control distance maintenance, auto-chaining of duplicate followers, and forward collision avoidance raycasts
-- **Ground Alignment** â€” 4-point terrain raycasts for smooth pitch/roll alignment on slopes (auto-caches mesh bounds)
-- **Orbit timeout detection** â€” automatically abandons unreachable waypoints
+- **Spline Patrol** — follow any `USplineComponent` with smooth arc-steering entry
+- **Area Patrol** — patrol randomly within a `PatrolAreaVolume` with realistic constant-arc turning (configurable `MinTurningRadius`)
+- **Convoy Follow** — chain multiple vehicles to follow a leader with proportional-control distance maintenance, auto-chaining of duplicate followers, and forward collision avoidance raycasts
+- **Ground Alignment** — 4-point terrain raycasts for smooth pitch/roll alignment on slopes (auto-caches mesh bounds)
+- **Orbit timeout detection** — automatically abandons unreachable waypoints
 
 ### Mission Manager
 - **Timed missions** with configurable duration, countdown, and attempt limits
-- **Target tracking** â€” auto-discovers `ATargetActor` instances with `bIsMissionTarget = true`
-- **State machine** â€” `NotStarted â†’ InProgress â†’ Success/Failed` with Blueprint-assignable delegates
-- **Last-payload-in-flight logic** â€” correctly handles the edge case where the timer expires but a payload is still airborne
-- **Mission summary** â€” tracks total damage inflicted and targets destroyed
-- **Retry system** â€” full state reset with `RetryMission()`
-- **Custom Depth glow** â€” automatically enables/disables `CustomDepthStencil` on mission targets
+- **Target tracking** — auto-discovers `ATargetActor` instances with `bIsMissionTarget = true`
+- **State machine** — `NotStarted → InProgress → Success/Failed` with Blueprint-assignable delegates
+- **Last-payload-in-flight logic** — correctly handles the edge case where the timer expires but a payload is still airborne
+- **Mission summary** — tracks total damage inflicted and targets destroyed
+- **Retry system** — full state reset with `RetryMission()`
+- **Custom Depth glow** — automatically enables/disables `CustomDepthStencil` on mission targets
 
 ---
 
@@ -53,8 +53,8 @@ Copy the `Plugins/DynamicPayloadSystem` folder into your project's `Plugins/` di
 ### 2. Create a Target
 1. Place an `ATargetActor` in your level (or create a Blueprint from it)
 2. Assign meshes for **Intact**, **Damaged**, and **Destroyed** states
-3. Configure `DamagableComponent` â†’ set `MaxHealth`
-4. Configure `MovableTargetComponent` â†’ choose a `MovementMode`:
+3. Configure `DamagableComponent` → set `MaxHealth`
+4. Configure `MovableTargetComponent` → choose a `MovementMode`:
    - **PatrolSpline:** Assign a Spline actor
    - **PatrolArea:** Assign a `PatrolAreaVolume`
    - **ConvoyFollow:** Assign a `ConvoyLeader`
@@ -72,7 +72,7 @@ Copy the `Plugins/DynamicPayloadSystem` folder into your project's `Plugins/` di
 4. *(Optional)* Assign a `CameraShake` class for automatic screen shake
 
 ### 5. Attach to Your Pawn
-1. Add `UPayloadAttachmentComponent` to your pawn (any pawn â€” drones, helicopters, characters)
+1. Add `UPayloadAttachmentComponent` to your pawn (any pawn — drones, helicopters, characters)
 2. Set `PayloadClass` to your Payload Blueprint
 3. Call `DetachPayload()` from your input binding to drop the bomb
 
@@ -86,40 +86,43 @@ Copy the `Plugins/DynamicPayloadSystem` folder into your project's `Plugins/` di
 
 ## Architecture
 
-```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                    PayloadMissionManager                     â”‚
-â”‚  State Machine: NotStarted â†’ InProgress â†’ Success/Failed    â”‚
-â”‚  Tracks: Targets, Attempts, Timer, Damage Summary           â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-           â”‚ discovers                        â”‚ spawns via
-           â–¼                                  â–¼
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚   TargetActor    â”‚              â”‚ PayloadAttachmentComponentâ”‚
-â”‚ â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”‚              â”‚ (attach to ANY pawn)      â”‚
-â”‚ â”‚ Damagable    â”‚ â”‚              â”‚                           â”‚
-â”‚ â”‚ Component    â”‚ â”‚              â”‚  spawns & attaches        â”‚
-â”‚ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤ â”‚              â”‚         â”‚                 â”‚
-â”‚ â”‚ Behavior     â”‚ â”‚              â”‚         â–¼                 â”‚
-â”‚ â”‚ Component    â”‚ â”‚              â”‚    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”            â”‚
-â”‚ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤ â”‚              â”‚    â”‚ Payload â”‚            â”‚
-â”‚ â”‚ Movable      â”‚ â”‚              â”‚    â”‚ (bomb)  â”‚            â”‚
-â”‚ â”‚ Target Comp  â”‚ â”‚              â”‚    â””â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”˜            â”‚
-â”‚ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â”‚              â”‚         â”‚ explodes        â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜              â”‚         â–¼                 â”‚
-                                  â”‚    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”           â”‚
-                                  â”‚    â”‚ Explosiveâ”‚           â”‚
-                                  â”‚    â”‚ (damage) â”‚           â”‚
-                                  â”‚    â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜           â”‚
-                                  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+```mermaid
+graph TD
+    classDef manager fill:#2d3436,stroke:#74b9ff,stroke-width:2px,color:#fff;
+    classDef component fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff;
+    classDef actor fill:#d63031,stroke:#fab1a0,stroke-width:2px,color:#fff;
+
+    PMM["PayloadMissionManager<br/>State Machine: NotStarted → InProgress → Success/Failed<br/>Tracks: Targets, Attempts, Timer, Damage Summary"]:::manager
+    
+    TA["TargetActor"]:::actor
+    PAC["PayloadAttachmentComponent<br/>(attach to ANY pawn)"]:::component
+    
+    PMM -- "discovers" --> TA
+    PMM -- "spawns via" --> PAC
+    
+    subgraph TargetActor Components
+        DC["Damagable Component"]:::component
+        BC["Behavior Component"]:::component
+        MTC["Movable Target Comp"]:::component
+    end
+    
+    TA --> DC
+    TA --> BC
+    TA --> MTC
+    
+    Payload["Payload (Bomb)"]:::actor
+    Explosive["Explosive (Damage)"]:::actor
+    
+    PAC -- "spawns & attaches" --> Payload
+    Payload -- "explodes" --> Explosive
 ```
 
 ### Component Breakdown
 
 | Component | Type | Purpose |
 |---|---|---|
-| `UDamagableComponent` | `UActorComponent` | Health tracking, structural state transitions (Intactâ†’Damagedâ†’Destroyed), damage events |
-| `UTargetBehaviorComponent` | `UActorComponent` | Reacts to damage states â€” modifies movement speed/ability |
+| `UDamagableComponent` | `UActorComponent` | Health tracking, structural state transitions (Intact→Damaged→Destroyed), damage events |
+| `UTargetBehaviorComponent` | `UActorComponent` | Reacts to damage states — modifies movement speed/ability |
 | `UMovableTargetComponent` | `USceneComponent` | AI movement: Spline Patrol, Area Patrol, Convoy Follow, Ground Alignment |
 | `UPayloadAttachmentComponent` | `UActorComponent` | Attach/detach/spawn payloads, kamikaze mode, dangling physics |
 
@@ -127,11 +130,11 @@ Copy the `Plugins/DynamicPayloadSystem` folder into your project's `Plugins/` di
 
 | Actor | Purpose |
 |---|---|
-| `AExplosive` | Spawned by Payload â€” applies radial damage, physics impulse, VFX/SFX, camera shake |
-| `APayload` | The bomb â€” fuse timer, impact detonation, spawns AExplosive |
+| `AExplosive` | Spawned by Payload — applies radial damage, physics impulse, VFX/SFX, camera shake |
+| `APayload` | The bomb — fuse timer, impact detonation, spawns AExplosive |
 | `ATargetActor` | Pre-built target with mesh swapping, all components pre-attached |
 | `APatrolAreaVolume` | Box volume for random patrol waypoints |
-| `APayloadMissionManager` | Mission state machine â€” timer, attempts, target tracking |
+| `APayloadMissionManager` | Mission state machine — timer, attempts, target tracking |
 
 ---
 
@@ -197,4 +200,4 @@ Core, CoreUObject, Engine, Niagara, PhysicsCore
 
 ## License
 
-MIT License â€” free for personal and commercial use.
+MIT License — free for personal and commercial use.
