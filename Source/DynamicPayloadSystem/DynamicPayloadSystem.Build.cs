@@ -3,9 +3,9 @@
 using UnrealBuildTool;
 using System.IO;
 
-public class TacticalFramework : ModuleRules
+public class DynamicPayloadSystem : ModuleRules
 {
-	public TacticalFramework(ReadOnlyTargetRules Target) : base(Target)
+	public DynamicPayloadSystem(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 

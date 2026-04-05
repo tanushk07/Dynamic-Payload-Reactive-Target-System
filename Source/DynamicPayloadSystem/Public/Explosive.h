@@ -16,7 +16,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 );
 
 UCLASS()
-class TACTICALFRAMEWORK_API AExplosive : public AActor
+class DYNAMICPAYLOADSYSTEM_API AExplosive : public AActor
 {
 	GENERATED_BODY()
 
