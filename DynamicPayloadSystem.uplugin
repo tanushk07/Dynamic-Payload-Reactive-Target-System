@@ -10,11 +10,17 @@
 	"DocsURL": "https://github.com/Tanushk-S/DynamicPayloadSystem/blob/main/README.md",
 	"MarketplaceURL": "",
 	"SupportURL": "https://github.com/Tanushk-S/DynamicPayloadSystem/issues",
-	"EngineVersion": "5.5.0",
+	"EngineVersion": "5.7.0",
 	"CanContainContent": true,
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		}
+	],
 	"SupportedTargetPlatforms": [
 		"Win64",
 		"Linux",
