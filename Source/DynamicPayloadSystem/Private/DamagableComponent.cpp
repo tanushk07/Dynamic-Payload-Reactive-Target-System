@@ -9,6 +9,20 @@ UDamagableComponent::UDamagableComponent()
 void UDamagableComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Defensive: a designer or Blueprint setter that bypasses the ClampMin meta
+	// (e.g. SetMaxHealth at runtime) can still drive MaxHealth to 0. Snap it
+	// up so UpdateStructuralState never short-circuits.
+	if (MaxHealth <= 0.f)
+	{
+#if WITH_EDITOR
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Damagable] %s: MaxHealth was %.2f; clamped to 1.0 to avoid softlock"),
+			*GetOwner()->GetName(), MaxHealth);
+#endif
+		MaxHealth = 1.f;
+	}
+
 	CurrentHealth = MaxHealth;
 
 	AActor* Owner = GetOwner();
@@ -45,7 +59,7 @@ void UDamagableComponent::OnTakeAnyDamage(
 	if (StructuralState == EStructuralState::Destroyed)
 		return;
 
-	CurrentHealth = FMath::Max(CurrentHealth - Damage, 0);
+	CurrentHealth = FMath::Max(CurrentHealth - Damage, 0.f);
 	OnDamageTaken.Broadcast(Damage, CurrentHealth);
 	UpdateStructuralState();
 }
@@ -95,6 +109,18 @@ void UDamagableComponent::UpdateStructuralState()
 	{
 		StructuralState = NewState;
 		OnStructuralStateChanged.Broadcast(StructuralState);
+
+		// Wire DestroyDelay through SetLifeSpan so the actor self-despawns
+		// after the destroyed-state visuals (mesh swap, glow off) have played.
+		// SetLifeSpan(0) means "don't auto-destroy", so a user can opt out by
+		// setting DestroyDelay = 0 and handling cleanup themselves.
+		if (NewState == EStructuralState::Destroyed && DestroyDelay > 0.f)
+		{
+			if (AActor* Owner = GetOwner())
+			{
+				Owner->SetLifeSpan(DestroyDelay);
+			}
+		}
 	}
 
 #if WITH_EDITOR

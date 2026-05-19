@@ -2,10 +2,14 @@
 #include "DamagableComponent.h"
 #include "TargetBehaviorComponent.h"
 #include "MovableTargetComponent.h"
+#include "PayloadMissionManager.h"
+#include "EngineUtils.h"
 
 ATargetActor::ATargetActor()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	// Tick disabled — Tick() body is empty. Subclasses that need ticking
+	// should set bCanEverTick = true in their constructor.
+	PrimaryActorTick.bCanEverTick = false;
 
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
@@ -51,11 +55,19 @@ void ATargetActor::BeginPlay()
 			&ATargetActor::HandleStructuralStateChanged
 		);
 	}
-}
 
-void ATargetActor::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
+	// Late-spawn registration: if a mission manager exists and the mission is
+	// already InProgress, this target gets folded into the active mission.
+	// RegisterMissionTarget is a no-op outside InProgress, so targets that
+	// spawn before mission start are picked up by StartMission's iterator.
+	if (bIsMissionTarget)
+	{
+		for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+		{
+			It->RegisterMissionTarget(this);
+			break;
+		}
+	}
 }
 
 void ATargetActor::HandleStructuralStateChanged(EStructuralState NewState)

@@ -531,9 +531,15 @@ void UMovableTargetComponent::UpdateConvoyMovement(float DeltaTime, USplineCompo
 #endif
 }
 
-float UMovableTargetComponent::GetForwardClearance() const
+float UMovableTargetComponent::GetForwardClearance()
 {
 	AActor* OwnerActor = GetOwner();
+	UWorld* World = GetWorld();
+	if (!OwnerActor || !World)
+	{
+		return ConvoyForwardTraceRange;
+	}
+
 	FVector Start = OwnerActor->GetActorLocation() + FVector(0, 0, 100.f);
 
 	FVector Forward = OwnerActor->GetActorForwardVector();
@@ -546,18 +552,35 @@ float UMovableTargetComponent::GetForwardClearance() const
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(OwnerActor);
 
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	// Refresh the cached follower list at most once every
+	// ConvoyFollowerCacheRefreshSeconds seconds. Previously this walked the
+	// full world-actor list every frame per follower (O(N*M) total).
+	const float Now = World->GetTimeSeconds();
+	if (Now >= CachedConvoyFollowersValidUntil)
 	{
-		if (*It != OwnerActor && It->FindComponentByClass<UMovableTargetComponent>())
+		CachedConvoyFollowers.Reset();
+		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			Params.AddIgnoredActor(*It);
+			if (*It != OwnerActor && It->FindComponentByClass<UMovableTargetComponent>())
+			{
+				CachedConvoyFollowers.Add(*It);
+			}
+		}
+		CachedConvoyFollowersValidUntil = Now + ConvoyFollowerCacheRefreshSeconds;
+	}
+
+	for (const TWeakObjectPtr<AActor>& WeakActor : CachedConvoyFollowers)
+	{
+		if (AActor* Actor = WeakActor.Get())
+		{
+			Params.AddIgnoredActor(Actor);
 		}
 	}
 
-	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	if (World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
 	{
 #if WITH_EDITOR
-		DrawDebugLine(GetWorld(), Start, Hit.ImpactPoint, FColor::Orange, false, 0.f, 0, 3.f);
+		DrawDebugLine(World, Start, Hit.ImpactPoint, FColor::Orange, false, 0.f, 0, 3.f);
 #endif
 		return Hit.Distance;
 	}
@@ -670,9 +693,21 @@ void UMovableTargetComponent::AlignToGround(float DeltaTime)
 	ActorLocation.Z = SmoothedZ;
 	OwnerActor->SetActorLocation(ActorLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
-	float CurrentYaw = OwnerActor->GetActorRotation().Yaw;
-	float SmoothedYaw = FMath::FixedTurn(CurrentYaw, DesiredMovementYaw, YawTurnSpeed * DeltaTime);
-	OwnerActor->SetActorRotation(FRotator(0, SmoothedYaw, 0));
+	const FRotator CurrentRot = OwnerActor->GetActorRotation();
+	const float SmoothedYaw = FMath::FixedTurn(CurrentRot.Yaw, DesiredMovementYaw, YawTurnSpeed * DeltaTime);
+
+	// ATargetActor uses its GroundFrame child to absorb pitch/roll, so the
+	// root takes a pure yaw rotation. For any other owner there is no
+	// GroundFrame to compensate, so zeroing pitch/roll on the root would make
+	// the actor sit flat on slopes — preserve incoming pitch/roll instead.
+	if (Cast<ATargetActor>(OwnerActor))
+	{
+		OwnerActor->SetActorRotation(FRotator(0.f, SmoothedYaw, 0.f));
+	}
+	else
+	{
+		OwnerActor->SetActorRotation(FRotator(CurrentRot.Pitch, SmoothedYaw, CurrentRot.Roll));
+	}
 
 	if (bLeft && bRight)
 	{

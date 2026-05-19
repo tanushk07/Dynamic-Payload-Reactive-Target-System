@@ -165,7 +165,35 @@ FOnMissionStateChanged OnMissionStateChanged;
 UPROPERTY(BlueprintAssignable)
 FOnMissionTimeUpdated OnMissionTimeUpdated;
 // Parameters: float RemainingTime
+
+UPROPERTY(BlueprintAssignable)
+FOnMissionResolved OnMissionResolved;
+// Parameters: EPayloadMissionState FinalState, int32 InitialTargets,
+//             int32 TargetsDestroyed, float TotalDamage
+// Fires once when the mission ends — bind in your results screen.
 ```
+
+### IMissionLogReceiver (HUD log dispatch)
+
+The mission manager dispatches log entries via a Blueprint-callable interface
+instead of string-keyed reflection. To receive logs in your HUD:
+
+**C++:**
+```cpp
+class AMyHUD : public AHUD, public IMissionLogReceiver
+{
+    GENERATED_BODY()
+public:
+    virtual void PushGameLog_Implementation(const FGameLogEntry& Entry) override;
+};
+```
+
+**Blueprint:** Class Settings → Interfaces → Add `MissionLogReceiver`, then
+override the `Push Game Log` event.
+
+Logs emitted before a HUD exists are queued and flushed on first delivery.
+If the active HUD class doesn't implement the interface, logs are dropped
+with a one-time warning (editor only).
 
 ### UDamagableComponent
 ```cpp

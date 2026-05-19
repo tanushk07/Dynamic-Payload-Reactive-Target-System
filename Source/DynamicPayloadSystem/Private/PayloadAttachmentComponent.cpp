@@ -17,6 +17,13 @@ void UPayloadAttachmentComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Cache mission manager reference once
+	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	{
+		CachedMissionManager = *It;
+		break;
+	}
+
 	// Bind kamikaze hit detection to the trigger mesh
 	if (bKamikazeMode && !KamikazeTriggerMeshName.IsNone())
 	{
@@ -51,12 +58,7 @@ void UPayloadAttachmentComponent::SpawnAndAttachPayload()
 		return;
 
 	// Mission mode gate
-	APayloadMissionManager* MissionManager = nullptr;
-	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
-	{
-		MissionManager = *It;
-		break;
-	}
+	APayloadMissionManager* MissionManager = CachedMissionManager;
 
 	if (MissionManager && MissionManager->IsMissionSystemEnabled())
 	{
@@ -157,7 +159,11 @@ void UPayloadAttachmentComponent::CreatePhysicsConstraint()
 	if (!OwnerRoot || !PayloadMesh)
 		return;
 
-	PayloadConstraint = NewObject<UPhysicsConstraintComponent>(GetOwner(), TEXT("PayloadConstraint"));
+	// MakeUniqueObjectName so successive Spawn→Detach→Spawn cycles (mission retry,
+	// multi-attempt missions) don't collide on a static FName and assert in shipping.
+	const FName UniqueName = MakeUniqueObjectName(
+		GetOwner(), UPhysicsConstraintComponent::StaticClass(), TEXT("PayloadConstraint"));
+	PayloadConstraint = NewObject<UPhysicsConstraintComponent>(GetOwner(), UniqueName);
 	PayloadConstraint->RegisterComponent();
 	PayloadConstraint->AttachToComponent(OwnerRoot, FAttachmentTransformRules::KeepRelativeTransform);
 	PayloadConstraint->SetRelativeLocation(FVector::ZeroVector);
@@ -201,9 +207,19 @@ void UPayloadAttachmentComponent::DetachPayload()
 	if (!OwnerRoot || !PayloadMesh)
 		return;
 
-	// Clear ignore lists so payload can collide with targets
-	OwnerRoot->MoveIgnoreActors.Remove(AttachedPayload);
-	PayloadMesh->MoveIgnoreActors.Remove(GetOwner());
+	// Mirror everything SpawnAndAttachPayload set up. Previously only the two
+	// MoveIgnoreActors entries were cleared, which left the payload silently
+	// ignoring the owner's collision channel — meaning a dropped payload could
+	// fall through the drone that dropped it.
+	OwnerRoot->IgnoreActorWhenMoving(AttachedPayload, false);
+	PayloadMesh->IgnoreActorWhenMoving(GetOwner(), false);
+	OwnerRoot->IgnoreComponentWhenMoving(PayloadMesh, false);
+	PayloadMesh->IgnoreComponentWhenMoving(OwnerRoot, false);
+
+	ECollisionChannel OwnerChannel = OwnerRoot->GetCollisionObjectType();
+	PayloadMesh->SetCollisionResponseToChannel(OwnerChannel, ECR_Block);
+	// We deliberately leave the camera channel as Ignore — a projectile
+	// blocking the player camera is undesirable in every scenario.
 
 	if (bEnableDanglingPhysics)
 	{
@@ -241,10 +257,9 @@ void UPayloadAttachmentComponent::DetachPayload()
 	OnPayloadStateChanged.Broadcast(false);
 
 	// Notify mission manager
-	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	if (CachedMissionManager)
 	{
-		It->NotifyAttemptConsumed();
-		break;
+		CachedMissionManager->NotifyAttemptConsumed();
 	}
 }
 
@@ -310,10 +325,9 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	DestroyPhysicsConstraint();
 
 	// Notify mission manager
-	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	if (CachedMissionManager)
 	{
-		It->NotifyKamikazeTriggered();
-		break;
+		CachedMissionManager->NotifyKamikazeTriggered();
 	}
 
 	const FVector ExplosionLocation = KamikazeTriggerMesh ?

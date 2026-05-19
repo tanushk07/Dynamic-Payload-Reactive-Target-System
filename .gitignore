@@ -33,3 +33,9 @@ Thumbs.db
 
 # Compiled shaders
 *.ushaderbytecode
+
+# Claude Code session state
+.claude/
+
+# FAB packaging output (we keep _Packaged out of the repo)
+_Packaged/

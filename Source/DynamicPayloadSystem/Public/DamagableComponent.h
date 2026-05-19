@@ -43,7 +43,9 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Health")
 	float CurrentHealth;
 
-	UPROPERTY(EditAnywhere, Category = "Health")
+	UPROPERTY(EditAnywhere, Category = "Health",
+		meta = (ClampMin = "0.01",
+			ToolTip = "Maximum health. Must be > 0 — at 0 the structural-state update short-circuits and the actor can never transition to Destroyed."))
 	float MaxHealth = 100.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Identity")
@@ -61,7 +63,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Damage")
 	float DestroyedThreshold = 0.25f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
+	/** Seconds between entering the Destroyed state and the owning actor being despawned.
+	 *  Set to 0 to keep the actor alive forever (the user is responsible for cleanup).
+	 *  Set to >0 to auto-destroy via SetLifeSpan after the destroyed-state visuals play. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage",
+		meta = (ClampMin = "0.0"))
 	float DestroyDelay = 2.f;
 
 	UPROPERTY(BlueprintAssignable, Category = "Damage")

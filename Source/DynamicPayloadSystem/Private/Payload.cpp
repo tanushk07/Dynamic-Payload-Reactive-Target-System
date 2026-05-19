@@ -21,6 +21,13 @@ APayload::APayload()
 void APayload::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Cache mission manager reference once
+	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	{
+		CachedMissionManager = *It;
+		break;
+	}
 }
 
 void APayload::Explode(const FVector& ExplosionLocation)
@@ -46,15 +53,15 @@ void APayload::Explode(const FVector& ExplosionLocation)
 
 		if (Explosive)
 		{
+			Explosive->bExplodeOnBeginPlay = true;
 			UGameplayStatics::FinishSpawningActor(Explosive, SpawnTransform);
 		}
 	}
 
-	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	if (CachedMissionManager)
 	{
-		It->RespawnPayloadDelayed();
-		It->NotifyLastPayloadResolved();
-		break;
+		CachedMissionManager->RespawnPayloadDelayed();
+		CachedMissionManager->NotifyLastPayloadResolved();
 	}
 
 	Destroy();
@@ -71,8 +78,12 @@ void APayload::Arm()
 	UE_LOG(LogTemp, Warning, TEXT("Payload armed"));
 #endif
 
-	if (PayloadDynamicBehaviour)
+	if (bExplodeOnHit)
 	{
+		// Explicit so hit events work regardless of project-level collision
+		// profile customisation. The PhysicsActor profile usually sets this,
+		// but we don't want to rely on that.
+		PayloadMesh->SetNotifyRigidBodyCollision(true);
 		PayloadMesh->OnComponentHit.AddDynamic(
 			this, &APayload::OnPayloadHit
 		);

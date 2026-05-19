@@ -204,7 +204,16 @@ private:
 		float DesiredDistance, float SplineLength);
 	void DrawConvoyDebug(USplineComponent* Spline, float DesiredDistance,
 		const FVector& CurrentLoc, const FVector& Tangent, float Gap);
-	float GetForwardClearance() const;
+	float GetForwardClearance();
+
+	/* Cached list of other actors that own a UMovableTargetComponent; rebuilt
+	 * every ConvoyFollowerCacheRefreshSeconds so GetForwardClearance does not
+	 * walk the world actor list every frame. Refreshing slowly is fine: new
+	 * convoy followers spawning mid-game are picked up within the refresh
+	 * window. */
+	TArray<TWeakObjectPtr<AActor>> CachedConvoyFollowers;
+	float CachedConvoyFollowersValidUntil = -1.f;
+	static constexpr float ConvoyFollowerCacheRefreshSeconds = 2.f;
 
 	void AlignToGround(float DeltaTime);
 	bool TraceGround(const FVector& Origin, const FVector& Offset, FHitResult& OutHit);

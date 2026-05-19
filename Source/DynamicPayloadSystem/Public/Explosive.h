@@ -2,12 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "NiagaraComponent.h"
-#include "Sound/SoundBase.h"
-#include "NiagaraSystem.h"
-#include "Kismet/GameplayStatics.h"
-#include "Camera/CameraShakeBase.h"
+#include "Engine/EngineTypes.h"
+#include "Engine/OverlapResult.h"
 #include "Explosive.generated.h"
+
+class UNiagaraComponent;
+class USoundBase;
+class UCameraShakeBase;
+class UDamageType;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnExplosionTriggered,
@@ -50,7 +52,7 @@ protected:
 
 	float CalculateFinalDamage(AActor* Victim, const FVector& ExplosionPos);
 	float ComputeDirectionalFactor(const FVector& ToTarget) const;
-	bool HasLineOfSight(AActor* Target) const;
+	bool HasLineOfSight(const FVector& TargetPoint) const;
 
 	/* ================= Unit Conversion ================= */
 
@@ -72,13 +74,28 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Explosion")
 	TEnumAsByte<ERadialImpulseFalloff> Falloff = ERadialImpulseFalloff::RIF_Linear;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explosion|SI")
-	float DestroyDelay_s = 0.2f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explosion|SI",
+		meta = (ClampMin = "0.1",
+			ToolTip = "Seconds the actor lives after detonation. Must outlast your Niagara FX or the VFX will pop."))
+	float DestroyDelay_s = 3.0f;
+
+	/** If true, detonates automatically on BeginPlay. Disabled by default so designers
+	 *  can preview/place explosives in a level without them firing. APayload sets this
+	 *  to true on spawned instances. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explosion")
+	bool bExplodeOnBeginPlay = false;
 
 	/* ================= Damage Parameters (SI) ================= */
 
 	UPROPERTY(EditAnywhere, Category = "Damage|SI")
-	float MaxDamage = 1.0f;
+	float MaxDamage = 10.0f;
+
+	/** Damage values below this threshold are not applied. Prevents spamming
+	 *  ApplyDamage with sub-noise values for distant targets. Was a hard-coded
+	 *  1.0 before — now configurable. */
+	UPROPERTY(EditAnywhere, Category = "Damage|SI",
+		meta = (ClampMin = "0.0"))
+	float MinDamageToApply = 1.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Damage|SI")
 	float InnerRadius_m = 1.5f;
