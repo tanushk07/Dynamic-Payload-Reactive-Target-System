@@ -9,8 +9,8 @@ public class DynamicPayloadSystem : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		// Ensures IWYU (Include-What-You-Use) compliance across all platforms
-		bEnforceIWYU = true;
+		// Strict include-what-you-use. Replaces the deprecated/removed bEnforceIWYU flag.
+		IWYUSupport = IWYUSupport.Full;
 
 		PublicIncludePaths.AddRange(new string[]
 		{

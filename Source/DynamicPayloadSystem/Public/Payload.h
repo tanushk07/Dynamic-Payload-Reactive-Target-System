@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class AExplosive;
+class APayloadMissionManager;
 
 UCLASS()
 class DYNAMICPAYLOADSYSTEM_API APayload : public AActor
@@ -28,8 +29,13 @@ protected:
 	bool bIsArmed = false;
 	FTimerHandle FuseTimerHandle;
 
+	UPROPERTY()
+	APayloadMissionManager* CachedMissionManager = nullptr;
+
+	/** If true, the armed payload detonates on physical contact with any actor
+	 *  that has a UDamagableComponent (in addition to the fuse timer). */
 	UPROPERTY(EditAnywhere, Category = "Explosion")
-	bool PayloadDynamicBehaviour = false;
+	bool bExplodeOnHit = false;
 
 public:
 	void Explode(const FVector& ExplosionLocation);

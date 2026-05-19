@@ -1,8 +1,10 @@
 #include "Explosive.h"
-#include "FExplosionLogEntry.h"
 #include "DamagableComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "Sound/SoundBase.h"
+#include "Camera/CameraShakeBase.h"
 #include "Kismet/GameplayStatics.h"
-#include "GameFramework/HUD.h"
 #if WITH_EDITOR
 #include "DrawDebugHelpers.h"
 #endif
@@ -23,6 +25,12 @@ AExplosive::AExplosive()
 void AExplosive::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (!bExplodeOnBeginPlay)
+	{
+		return;
+	}
+
 #if WITH_EDITOR
 	DrawExplosionDebug();
 #endif
@@ -108,7 +116,7 @@ void AExplosive::ApplyDamageToActors(const TArray<FOverlapResult>& Overlaps)
 		const float FinalDamage =
 			CalculateFinalDamage(HitActor, GetActorLocation());
 
-		if (FinalDamage > 1.f)
+		if (FinalDamage > MinDamageToApply)
 		{
 			UGameplayStatics::ApplyDamage(
 				HitActor,
@@ -161,7 +169,7 @@ float AExplosive::CalculateFinalDamage(AActor* Victim, const FVector& ExplosionP
 
 	const FVector ToTarget = ClosestPoint - ExplosionPos;
 	const float DirectionalFactor = ComputeDirectionalFactor(ToTarget);
-	const float VisibilityFactor = HasLineOfSight(Victim) ? 1.f : 0.3f;
+	const float VisibilityFactor = HasLineOfSight(ClosestPoint) ? 1.f : 0.3f;
 
 	const float BlastDamage =
 		MaxDamage * DistanceFactor * VisibilityFactor;
@@ -211,10 +219,8 @@ float AExplosive::ComputeDirectionalFactor(const FVector& ToTarget) const
 	return FMath::Lerp(0.85f, 1.0f, (Dot + 1.f) * 0.5f);
 }
 
-bool AExplosive::HasLineOfSight(AActor* Target) const
+bool AExplosive::HasLineOfSight(const FVector& TargetPoint) const
 {
-	if (!Target) return false;
-
 	FHitResult Hit;
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
@@ -223,12 +229,12 @@ bool AExplosive::HasLineOfSight(AActor* Target) const
 		GetWorld()->LineTraceSingleByChannel(
 			Hit,
 			GetActorLocation(),
-			Target->GetActorLocation(),
+			TargetPoint,
 			ECC_Visibility,
 			Params
 		);
 
-	return !bBlocked || Hit.GetActor() == Target;
+	return !bBlocked;
 }
 
 void AExplosive::DrawExplosionDebug() const

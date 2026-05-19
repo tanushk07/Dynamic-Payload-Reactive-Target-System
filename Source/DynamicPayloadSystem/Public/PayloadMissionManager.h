@@ -89,14 +89,33 @@ public:
 		EPayloadMissionState, NewState
 	);
 
+	/** Broadcast once when the mission resolves (Success or Failed). Carries the
+	 *  end-of-mission summary so a results screen can display it without polling. */
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+		FOnMissionResolved,
+		EPayloadMissionState, FinalState,
+		int32, InitialTargets,
+		int32, TargetsDestroyed,
+		float, TotalDamage
+	);
+
 	UPROPERTY(BlueprintAssignable, Category = "Mission")
 	FOnMissionTimeUpdated OnMissionTimeUpdated;
 
 	UPROPERTY(BlueprintAssignable, Category = "Mission")
 	FOnMissionStateChanged OnMissionStateChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Mission")
+	FOnMissionResolved OnMissionResolved;
+
 	UFUNCTION(BlueprintCallable)
 	void NotifyAttemptConsumed();
+
+	/** Register a target that came into existence after StartMission ran.
+	 *  Safe to call from anywhere — guarded against double-registration and
+	 *  silently ignores calls outside of the InProgress state. */
+	UFUNCTION(BlueprintCallable, Category = "Mission")
+	void RegisterMissionTarget(class ATargetActor* Target);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mission Mode")
 	bool bMissionModeEnabled = false;
@@ -146,6 +165,45 @@ public:
 	float LastPayloadStateChangeDelay = 3.0f;
 	FTimerHandle LastPayloadResolveTimerHandle;
 	void DeferredResolveLastPayload();
+
+	/**
+	 * Hard upper bound (seconds) on how long the mission may sit in the
+	 * "waiting for the last payload" state before it is force-resolved.
+	 * This is a safety backstop: the normal resolution path
+	 * (NotifyLastPayloadResolved -> DeferredResolveLastPayload) should
+	 * almost always fire first. The watchdog only matters when the last
+	 * payload leaves play through a path that never calls back into the
+	 * mission manager (Blueprint Destroy, owning pawn destroyed, level
+	 * streaming, EndPlay during travel, pooling/reuse, etc.). Set this
+	 * comfortably ABOVE the longest realistic payload flight + fuse time
+	 * so it never pre-empts a legitimate resolution.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mission",
+		meta = (ClampMin = "1.0"))
+	float LastPayloadWatchdogTimeout = 10.0f;
+	FTimerHandle LastPayloadWatchdogHandle;
+
+	/**
+	 * Spawns/attaches a payload on the first actor that actually has a
+	 * UPayloadAttachmentComponent. Centralizes the carrier lookup so the
+	 * "iterate, test for the component, then stop" logic exists in exactly
+	 * one place (the previous inline loops broke out of the iterator after
+	 * the first actor regardless of whether it had the component, so they
+	 * only worked by luck of actor iteration order).
+	 * @return true if a carrier was found and SpawnAndAttachPayload() ran.
+	 */
+	bool SpawnPayloadOnCarrier();
+
+	/** Enters the "waiting for last payload" state from a single place:
+	 *  sets flags, freezes the timer, and arms the watchdog. */
+	void EnterWaitingForLastPayload();
+
+	/** Arms (or re-arms) the watchdog timer. */
+	void StartLastPayloadWatchdog();
+
+	/** Fired only if nothing resolved the waiting state in time. */
+	UFUNCTION()
+	void OnLastPayloadWatchdogExpired();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training")
 	float ConfiguredFuseTime = 3.0f;

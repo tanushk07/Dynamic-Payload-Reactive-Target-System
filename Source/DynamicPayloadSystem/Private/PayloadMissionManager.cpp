@@ -4,6 +4,7 @@
 #include "EngineUtils.h"
 #include "Payload.h"
 #include "TargetActor.h"
+#include "MissionLogReceiver.h"
 #include "GameFramework/HUD.h"
 #include "GameFramework/PlayerController.h"
 
@@ -100,27 +101,11 @@ void APayloadMissionManager::StartMission()
 
 	EmitMissionLog(TEXT("Mission Started"), ELogSeverity::Info);
 
-	// Discover all mission targets
+	// Discover all mission targets currently in the world. Late-spawned targets
+	// self-register via ATargetActor::BeginPlay.
 	for (TActorIterator<ATargetActor> It(GetWorld()); It; ++It)
 	{
-		ATargetActor* TargetActor = *It;
-		if (!TargetActor || !TargetActor->bIsMissionTarget)
-			continue;
-
-		if (UDamagableComponent* DC = TargetActor->DamagableComponent)
-		{
-			DamageableTargets.Add(TargetActor);
-
-			DC->OnStructuralStateChanged.AddDynamic(
-				this,
-				&APayloadMissionManager::OnTargetStructuralStateChanged
-			);
-
-			DC->OnDamageTaken.AddDynamic(
-				this,
-				&APayloadMissionManager::OnTargetDamageTaken
-			);
-		}
+		RegisterMissionTarget(*It);
 	}
 	InitialTargetCount = DamageableTargets.Num();
 
@@ -132,28 +117,34 @@ void APayloadMissionManager::StartMission()
 		true
 	);
 
-	// Spawn payload on any actor with PayloadAttachmentComponent
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
-	{
-		if (UPayloadAttachmentComponent* PayloadComp = It->FindComponentByClass<UPayloadAttachmentComponent>())
-		{
-			PayloadComp->SpawnAndAttachPayload();
-		}
-		break;
-	}
+	// Spawn payload on the first actor that actually has a
+	// PayloadAttachmentComponent (see SpawnPayloadOnCarrier).
+	SpawnPayloadOnCarrier();
+}
 
-	// Enable glow on all damageable targets
-	for (AActor* Actor : DamageableTargets)
-	{
-		if (!Actor)
-			continue;
+void APayloadMissionManager::RegisterMissionTarget(ATargetActor* Target)
+{
+	if (!Target || !Target->bIsMissionTarget)
+		return;
 
-		if (UDamagableComponent* DC =
-			Actor->FindComponentByClass<UDamagableComponent>())
-		{
-			DC->SetHighlightEnabled(true);
-		}
-	}
+	if (MissionState != EPayloadMissionState::InProgress)
+		return;
+
+	if (DamageableTargets.Contains(Target))
+		return;
+
+	UDamagableComponent* DC = Target->DamagableComponent;
+	if (!DC)
+		return;
+
+	DamageableTargets.Add(Target);
+
+	DC->OnStructuralStateChanged.AddDynamic(
+		this, &APayloadMissionManager::OnTargetStructuralStateChanged);
+	DC->OnDamageTaken.AddDynamic(
+		this, &APayloadMissionManager::OnTargetDamageTaken);
+
+	DC->SetHighlightEnabled(true);
 }
 
 void APayloadMissionManager::TickMissionTimer()
@@ -183,6 +174,8 @@ void APayloadMissionManager::FailMission(const FString& Reason)
 
 	MissionState = EPayloadMissionState::Failed;
 	OnMissionStateChanged.Broadcast(MissionState);
+	OnMissionResolved.Broadcast(
+		MissionState, InitialTargetCount, TargetsDestroyedCount, TotalDamageInflicted);
 
 	GetWorld()->GetTimerManager().ClearTimer(MissionTimerHandle);
 
@@ -260,6 +253,8 @@ void APayloadMissionManager::SucceedMission()
 	bTimerFrozen = false;
 	MissionState = EPayloadMissionState::Success;
 	OnMissionStateChanged.Broadcast(MissionState);
+	OnMissionResolved.Broadcast(
+		MissionState, InitialTargetCount, TargetsDestroyedCount, TotalDamageInflicted);
 
 	GetWorld()->GetTimerManager().ClearTimer(MissionTimerHandle);
 
@@ -293,6 +288,7 @@ void APayloadMissionManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		GetWorld()->GetTimerManager().ClearTimer(MissionTimerHandle);
 		GetWorld()->GetTimerManager().ClearTimer(LastPayloadResolveTimerHandle);
+		GetWorld()->GetTimerManager().ClearTimer(LastPayloadWatchdogHandle);
 	}
 	DisableAllTargetHighlights();
 
@@ -316,7 +312,7 @@ void APayloadMissionManager::NotifyAttemptConsumed()
 
 	if (AttemptsRemaining <= 0 && DamageableTargets.Num() > 0)
 	{
-		bWaitingForLastPayload = true;
+		EnterWaitingForLastPayload();
 		return;
 	}
 	if (DamageableTargets.Num() == 0)
@@ -336,15 +332,9 @@ void APayloadMissionManager::RespawnPayloadDelayed()
 	if (AttemptsRemaining <= 0 || bWaitingForLastPayload)
 		return;
 
-	// Respawn payload on any actor with PayloadAttachmentComponent
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
-	{
-		if (UPayloadAttachmentComponent* PayloadComp = It->FindComponentByClass<UPayloadAttachmentComponent>())
-		{
-			PayloadComp->SpawnAndAttachPayload();
-		}
-		break;
-	}
+	// Respawn payload on the first actor that actually has a
+	// PayloadAttachmentComponent (see SpawnPayloadOnCarrier).
+	SpawnPayloadOnCarrier();
 }
 
 void APayloadMissionManager::NotifyLastPayloadResolved()
@@ -355,7 +345,12 @@ void APayloadMissionManager::NotifyLastPayloadResolved()
 	bTimerFrozen = true;
 
 	if (DamageableTargets.Num() == 0)
+	{
+		// Nothing left to destroy - resolve now instead of returning and
+		// making the player wait out the full watchdog timeout.
+		DeferredResolveLastPayload();
 		return;
+	}
 
 	GetWorld()->GetTimerManager().SetTimer(
 		LastPayloadResolveTimerHandle,
@@ -368,8 +363,19 @@ void APayloadMissionManager::NotifyLastPayloadResolved()
 
 void APayloadMissionManager::DeferredResolveLastPayload()
 {
+	// Both the normal resolve timer and the watchdog can race to call this.
+	// This guard makes it idempotent: whichever fires first transitions
+	// MissionState out of InProgress; the second call early-returns here.
 	if (MissionState != EPayloadMissionState::InProgress)
 		return;
+
+	// We are resolving now — cancel every pending path into this function
+	// so a stale timer/watchdog can't fire a second time into a new state.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(LastPayloadResolveTimerHandle);
+		World->GetTimerManager().ClearTimer(LastPayloadWatchdogHandle);
+	}
 
 	if (DamageableTargets.Num() == 0)
 	{
@@ -388,38 +394,124 @@ void APayloadMissionManager::DeferredResolveLastPayload()
 	}
 }
 
+bool APayloadMissionManager::SpawnPayloadOnCarrier()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+		return false;
+
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (UPayloadAttachmentComponent* PayloadComp =
+			It->FindComponentByClass<UPayloadAttachmentComponent>())
+		{
+			PayloadComp->SpawnAndAttachPayload();
+			return true;   // stop ONLY once we've found an actual carrier
+		}
+		// no break here: keep scanning until a carrier is found
+	}
+
+	return false;
+}
+
+void APayloadMissionManager::EnterWaitingForLastPayload()
+{
+	// Single, canonical entry into the "attempts exhausted, a payload may
+	// still be live" state. Every caller funnels through here so the
+	// watchdog is ALWAYS armed whenever bWaitingForLastPayload is true.
+	bWaitingForLastPayload = true;
+	bTimerFrozen = true;
+	StartLastPayloadWatchdog();
+}
+
+void APayloadMissionManager::StartLastPayloadWatchdog()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+		return;
+
+	World->GetTimerManager().ClearTimer(LastPayloadWatchdogHandle);
+	World->GetTimerManager().SetTimer(
+		LastPayloadWatchdogHandle,
+		this,
+		&APayloadMissionManager::OnLastPayloadWatchdogExpired,
+		LastPayloadWatchdogTimeout,
+		false
+	);
+}
+
+void APayloadMissionManager::OnLastPayloadWatchdogExpired()
+{
+	// If the normal path already resolved the mission, MissionState is no
+	// longer InProgress and there is nothing to do.
+	if (MissionState != EPayloadMissionState::InProgress)
+		return;
+
+	EmitMissionLog(
+		TEXT("Last-payload watchdog expired - force-resolving mission"),
+		ELogSeverity::Warning
+	);
+
+	// Route through the single shared exit point. State is evaluated from
+	// DamageableTargets exactly as a normal resolution would.
+	DeferredResolveLastPayload();
+}
+
 void APayloadMissionManager::EmitMissionLog(
 	const FString& Message,
 	ELogSeverity Severity
 )
 {
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
 	FGameLogEntry Log;
 	Log.LogType = ELogType::Mission;
 	Log.Severity = Severity;
 	Log.Message = FText::FromString(Message);
-	Log.TimeStamp = GetWorld()->GetTimeSeconds();
+	Log.TimeStamp = World->GetTimeSeconds();
 
-	APlayerController* PC = GetWorld()->GetFirstPlayerController();
-	if (!PC)
-	{
-		PendingMissionLogs.Add(Log);
-		return;
-	}
+	APlayerController* PC = World->GetFirstPlayerController();
+	AHUD* HUD = PC ? PC->GetHUD() : nullptr;
 
-	AHUD* HUD = PC->GetHUD();
 	if (!HUD)
 	{
+		// No HUD yet — queue and flush when one becomes available.
 		PendingMissionLogs.Add(Log);
 		return;
 	}
 
-	UFunction* Func = HUD->FindFunction(FName("PushGameLog"));
-	if (Func)
+	if (!HUD->GetClass()->ImplementsInterface(UMissionLogReceiver::StaticClass()))
 	{
-		struct { FGameLogEntry Entry; } Params;
-		Params.Entry = Log;
-		HUD->ProcessEvent(Func, &Params);
+		// HUD exists but won't receive logs. Drop the entry rather than queuing
+		// it, otherwise PendingMissionLogs would grow unbounded for the entire
+		// session. Warn once so the user knows what's happening.
+#if WITH_EDITOR
+		static bool bWarnedAboutMissingInterface = false;
+		if (!bWarnedAboutMissingInterface)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Mission] HUD '%s' does not implement IMissionLogReceiver — mission logs will be dropped."),
+				*HUD->GetClass()->GetName());
+			bWarnedAboutMissingInterface = true;
+		}
+#endif
+		PendingMissionLogs.Reset();
+		return;
 	}
+
+	// Drain any logs that were queued before the HUD existed. We flush in order
+	// so the consumer always sees mission events in the sequence they occurred.
+	for (const FGameLogEntry& Pending : PendingMissionLogs)
+	{
+		IMissionLogReceiver::Execute_PushGameLog(HUD, Pending);
+	}
+	PendingMissionLogs.Reset();
+
+	IMissionLogReceiver::Execute_PushGameLog(HUD, Log);
 }
 
 void APayloadMissionManager::DisableAllTargetHighlights()
@@ -463,7 +555,32 @@ void APayloadMissionManager::NotifyKamikazeTriggered()
 		ELogSeverity::Warning
 	);
 
-	bWaitingForLastPayload = true;
+	// Only enter the waiting state if attempts are genuinely exhausted AND
+	// targets remain. Previously this was set unconditionally on every
+	// kamikaze, which froze the mission even when the player still had
+	// attempts left and should simply have respawned.
+	if (AttemptsRemaining <= 0 && DamageableTargets.Num() > 0)
+	{
+		// Schedule resolution explicitly here. Do NOT rely on the
+		// subsequent APayload::Explode() incidentally calling
+		// NotifyLastPayloadResolved() in the right order - that coupling
+		// was the original latent hang. EnterWaitingForLastPayload() arms
+		// the watchdog; we additionally arm the normal (shorter) resolve
+		// timer so a clean kamikaze still resolves promptly.
+		EnterWaitingForLastPayload();
+
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(LastPayloadResolveTimerHandle);
+			World->GetTimerManager().SetTimer(
+				LastPayloadResolveTimerHandle,
+				this,
+				&APayloadMissionManager::DeferredResolveLastPayload,
+				LastPayloadStateChangeDelay,
+				false
+			);
+		}
+	}
 }
 
 void APayloadMissionManager::RetryMission()
@@ -472,6 +589,7 @@ void APayloadMissionManager::RetryMission()
 	GetWorld()->GetTimerManager().ClearTimer(CountdownTimerHandle);
 	GetWorld()->GetTimerManager().ClearTimer(QuitGameTimerHandle);
 	GetWorld()->GetTimerManager().ClearTimer(LastPayloadResolveTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(LastPayloadWatchdogHandle);
 
 	bWaitingForLastPayload = false;
 	bTimerFrozen = false;

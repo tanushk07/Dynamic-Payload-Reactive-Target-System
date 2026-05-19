@@ -126,4 +126,7 @@ private:
 
 	UPROPERTY()
 	UPrimitiveComponent* KamikazeTriggerMesh = nullptr;
+
+	UPROPERTY()
+	APayloadMissionManager* CachedMissionManager = nullptr;
 };

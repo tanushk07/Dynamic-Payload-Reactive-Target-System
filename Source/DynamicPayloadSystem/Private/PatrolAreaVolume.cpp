@@ -23,9 +23,12 @@ FVector APatrolAreaVolume::GetRandomPointInArea() const
 	const FVector Origin = Bounds->GetComponentLocation();
 	const FVector Extent = Bounds->GetScaledBoxExtent();
 
-	return Origin + FVector(
-		FMath::FRandRange(-Extent.X, Extent.X),
-		FMath::FRandRange(-Extent.Y, Extent.Y),
-		FMath::FRandRange(-Extent.Z, Extent.Z)
+	// Z is intentionally the volume centre — ground-based patrols zero the
+	// callsite's Z anyway, and the alternative (randomising Z too) wastes
+	// entropy and produces unreachable waypoints for ground vehicles.
+	return FVector(
+		Origin.X + FMath::FRandRange(-Extent.X, Extent.X),
+		Origin.Y + FMath::FRandRange(-Extent.Y, Extent.Y),
+		Origin.Z
 	);
 }
