@@ -78,6 +78,12 @@ protected:
 	UPROPERTY()
 	TArray<FGameLogEntry> PendingMissionLogs;
 
+	/** Per-instance "we've already warned about this" flag. Was a function-static
+	 *  bool previously, which persisted across PIE sessions — so devs who fixed
+	 *  the HUD-implements-interface issue would never see the diagnostic again
+	 *  in subsequent PIE sessions even if the issue regressed. */
+	bool bWarnedAboutMissingInterface = false;
+
 public:
 	DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 		FOnMissionTimeUpdated,

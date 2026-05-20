@@ -28,6 +28,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** Re-entry guard. Explode() is BlueprintCallable, so Blueprint code can
+	 *  call it externally — without this guard, double-call applies damage twice. */
+	bool bHasDetonated = false;
+
 	/* ================= Root & FX ================= */
 
 	UPROPERTY(VisibleAnywhere, Category = "Explosion")
@@ -52,7 +56,10 @@ protected:
 
 	float CalculateFinalDamage(AActor* Victim, const FVector& ExplosionPos);
 	float ComputeDirectionalFactor(const FVector& ToTarget) const;
-	bool HasLineOfSight(const FVector& TargetPoint) const;
+	/** Trace from this actor's location to TargetPoint, ignoring this actor and
+	 *  optionally an additional actor (typically the victim, so the trace doesn't
+	 *  self-hit the target's collision when the endpoint is on its surface). */
+	bool HasLineOfSight(const FVector& TargetPoint, const AActor* IgnoreActor = nullptr) const;
 
 	/* ================= Unit Conversion ================= */
 

@@ -1,5 +1,6 @@
 #include "Payload.h"
 #include "Explosive.h"
+#include "DynamicPayloadSystemModule.h"
 #include "Components/StaticMeshComponent.h"
 #include "PayloadMissionManager.h"
 #include "EngineUtils.h"
@@ -37,13 +38,17 @@ void APayload::Explode(const FVector& ExplosionLocation)
 
 	bHasExploded = true;
 
-	GetWorld()->GetTimerManager().ClearTimer(FuseTimerHandle);
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(FuseTimerHandle);
+	}
 
-	if (ExplosionClass)
+	if (ExplosionClass && World)
 	{
 		const FTransform SpawnTransform(FRotator::ZeroRotator, ExplosionLocation);
 
-		AExplosive* Explosive = GetWorld()->SpawnActorDeferred<AExplosive>(
+		AExplosive* Explosive = World->SpawnActorDeferred<AExplosive>(
 			ExplosionClass,
 			SpawnTransform,
 			this,
@@ -75,7 +80,7 @@ void APayload::Arm()
 	bIsArmed = true;
 
 #if WITH_EDITOR
-	UE_LOG(LogTemp, Warning, TEXT("Payload armed"));
+	UE_LOG(LogDynamicPayload, Warning, TEXT("Payload armed"));
 #endif
 
 	if (bExplodeOnHit)
@@ -89,13 +94,16 @@ void APayload::Arm()
 		);
 	}
 
-	GetWorld()->GetTimerManager().SetTimer(
-		FuseTimerHandle,
-		this,
-		&APayload::OnFuseExpired,
-		FuseTime,
-		false
-	);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			FuseTimerHandle,
+			this,
+			&APayload::OnFuseExpired,
+			FuseTime,
+			false
+		);
+	}
 }
 
 void APayload::OnFuseExpired()
@@ -104,7 +112,7 @@ void APayload::OnFuseExpired()
 		return;
 
 #if WITH_EDITOR
-	UE_LOG(LogTemp, Warning, TEXT("Payload fuse expired"));
+	UE_LOG(LogDynamicPayload, Warning, TEXT("Payload fuse expired"));
 #endif
 
 	Explode(GetActorLocation());
@@ -128,7 +136,7 @@ void APayload::OnPayloadHit(
 	if (!DamageComp) return;
 
 #if WITH_EDITOR
-	UE_LOG(LogTemp, Warning, TEXT("Payload impact detected"));
+	UE_LOG(LogDynamicPayload, Warning, TEXT("Payload impact detected"));
 #endif
 
 	Explode(Hit.ImpactPoint);

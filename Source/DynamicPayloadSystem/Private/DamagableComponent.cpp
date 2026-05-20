@@ -1,4 +1,5 @@
 #include "DamagableComponent.h"
+#include "DynamicPayloadSystemModule.h"
 #include "GameFramework/Actor.h"
 
 UDamagableComponent::UDamagableComponent()
@@ -16,7 +17,7 @@ void UDamagableComponent::BeginPlay()
 	if (MaxHealth <= 0.f)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogDynamicPayload, Warning,
 			TEXT("[Damagable] %s: MaxHealth was %.2f; clamped to 1.0 to avoid softlock"),
 			*GetOwner()->GetName(), MaxHealth);
 #endif
@@ -126,7 +127,7 @@ void UDamagableComponent::UpdateStructuralState()
 #if WITH_EDITOR
 	AActor* Owner = GetOwner();
 	if (!Owner) return;
-	UE_LOG(LogTemp, Display,
+	UE_LOG(LogDynamicPayload, Display,
 		TEXT("[%s] StructuralState -> %s (Health: %.1f / %.1f)"),
 		*Owner->GetName(),
 		*UEnum::GetValueAsString(StructuralState),

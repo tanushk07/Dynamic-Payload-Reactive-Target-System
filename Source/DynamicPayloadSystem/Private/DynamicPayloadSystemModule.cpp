@@ -1,5 +1,7 @@
 #include "DynamicPayloadSystemModule.h"
 
+DEFINE_LOG_CATEGORY(LogDynamicPayload);
+
 void FDynamicPayloadSystemModule::StartupModule()
 {
 }
