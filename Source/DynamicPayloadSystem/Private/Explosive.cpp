@@ -83,6 +83,10 @@ TArray<FOverlapResult> AExplosive::ScanForTargets() const
 	Params.AddObjectTypesToQuery(ECC_PhysicsBody);
 	Params.AddObjectTypesToQuery(ECC_Pawn);
 	Params.AddObjectTypesToQuery(ECC_WorldDynamic);
+	// WorldStatic so destructible buildings/cover that use the static channel
+	// can take blast damage. Without this, a bunker with a UDamagableComponent
+	// is invisible to the overlap query.
+	Params.AddObjectTypesToQuery(ECC_WorldStatic);
 
 	World->OverlapMultiByObjectType(
 		LocalOverlaps,

@@ -86,8 +86,18 @@ void UDamagableComponent::SetHighlightEnabled(bool bEnabled)
 
 void UDamagableComponent::UpdateStructuralState()
 {
+	// Runtime safety: BeginPlay snaps MaxHealth up to 1.0 if a designer left it
+	// at zero, but BP code can still call Set MaxHealth = 0 at runtime. Snap
+	// here too so UpdateStructuralState never short-circuits permanently.
 	if (MaxHealth <= 0.f)
-		return;
+	{
+#if WITH_EDITOR
+		UE_LOG(LogDynamicPayload, Warning,
+			TEXT("[Damagable] %s: MaxHealth was set to <= 0 at runtime; clamped to 1.0"),
+			GetOwner() ? *GetOwner()->GetName() : TEXT("(no owner)"));
+#endif
+		MaxHealth = 1.f;
+	}
 
 	const float HealthRatio = CurrentHealth / MaxHealth;
 
