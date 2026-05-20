@@ -173,8 +173,23 @@ void UPayloadAttachmentComponent::CreatePhysicsConstraint()
 	PayloadConstraint->SetLinearYLimit(ELinearConstraintMotion::LCM_Locked, 0);
 	PayloadConstraint->SetLinearZLimit(ELinearConstraintMotion::LCM_Locked, 0);
 
-	PayloadConstraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Free, 0);
-	PayloadConstraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Free, 0);
+	// Wire SwingAngleLimit (0..90) into the physics constraint so the editable
+	// UPROPERTY actually controls swing range.
+	// - SwingAngleLimit = 0  → constraint locked (no swing — kinematic-like behavior)
+	// - SwingAngleLimit > 0  → swing limited to ±SwingAngleLimit degrees from the
+	//   constraint's primary axis on both swing axes
+	// - Set to 90 to recover the original "essentially free" swing behavior.
+	// Twist is always free — a bomb's spin around its hanging axis isn't gameplay-relevant.
+	if (SwingAngleLimit > 0.f)
+	{
+		PayloadConstraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Limited, SwingAngleLimit);
+		PayloadConstraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Limited, SwingAngleLimit);
+	}
+	else
+	{
+		PayloadConstraint->SetAngularSwing1Limit(EAngularConstraintMotion::ACM_Locked, 0);
+		PayloadConstraint->SetAngularSwing2Limit(EAngularConstraintMotion::ACM_Locked, 0);
+	}
 	PayloadConstraint->SetAngularTwistLimit(EAngularConstraintMotion::ACM_Free, 0);
 
 	PayloadConstraint->SetConstrainedComponents(OwnerRoot, NAME_None, PayloadMesh, NAME_None);
@@ -335,6 +350,10 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	AttachedPayload->Explode(ExplosionLocation);
 	AttachedPayload = nullptr;
 	CachedPayloadMass = 0.0f;
+
+	// Symmetry with DetachPayload — UI / game code that listens for payload
+	// state changes should learn that the kamikaze payload is gone too.
+	OnPayloadStateChanged.Broadcast(false);
 
 	GetOwner()->Destroy();
 }

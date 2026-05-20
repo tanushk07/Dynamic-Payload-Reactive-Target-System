@@ -1,5 +1,6 @@
 #include "PayloadMissionManager.h"
 #include "DamagableComponent.h"
+#include "DynamicPayloadSystemModule.h"
 #include "PayloadAttachmentComponent.h"
 #include "EngineUtils.h"
 #include "Payload.h"
@@ -55,7 +56,7 @@ void APayloadMissionManager::HandleMissionStart()
 	if (!bHasValidPayload)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogTemp, Error, TEXT("[Mission] Cannot start - No PayloadClass assigned in PayloadAttachmentComponent!"));
+		UE_LOG(LogDynamicPayload, Error, TEXT("[Mission] Cannot start - No PayloadClass assigned in PayloadAttachmentComponent!"));
 #endif
 		return;
 	}
@@ -282,15 +283,25 @@ void APayloadMissionManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 
+	// Disable highlights BEFORE Empty()-ing the list — the function iterates
+	// DamageableTargets internally, so clearing first made the call a no-op.
+	DisableAllTargetHighlights();
 	DamageableTargets.Empty();
 
-	if (GetWorld())
+	if (UWorld* World = GetWorld())
 	{
-		GetWorld()->GetTimerManager().ClearTimer(MissionTimerHandle);
-		GetWorld()->GetTimerManager().ClearTimer(LastPayloadResolveTimerHandle);
-		GetWorld()->GetTimerManager().ClearTimer(LastPayloadWatchdogHandle);
+		FTimerManager& TM = World->GetTimerManager();
+		// UE auto-cancels timers when the target UObject dies, so these are
+		// defensive — but explicit cleanup keeps state predictable when the
+		// manager is destroyed before its timer windows close (level streaming,
+		// sub-level unload, world travel).
+		TM.ClearTimer(MissionTimerHandle);
+		TM.ClearTimer(LastPayloadResolveTimerHandle);
+		TM.ClearTimer(LastPayloadWatchdogHandle);
+		TM.ClearTimer(CountdownTimerHandle);
+		TM.ClearTimer(QuitGameTimerHandle);
+		TM.ClearTimer(PayloadRespawnTimerHandle);
 	}
-	DisableAllTargetHighlights();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -488,12 +499,11 @@ void APayloadMissionManager::EmitMissionLog(
 	{
 		// HUD exists but won't receive logs. Drop the entry rather than queuing
 		// it, otherwise PendingMissionLogs would grow unbounded for the entire
-		// session. Warn once so the user knows what's happening.
+		// session. Warn once per mission manager instance.
 #if WITH_EDITOR
-		static bool bWarnedAboutMissingInterface = false;
 		if (!bWarnedAboutMissingInterface)
 		{
-			UE_LOG(LogTemp, Warning,
+			UE_LOG(LogDynamicPayload, Warning,
 				TEXT("[Mission] HUD '%s' does not implement IMissionLogReceiver — mission logs will be dropped."),
 				*HUD->GetClass()->GetName());
 			bWarnedAboutMissingInterface = true;
@@ -620,6 +630,10 @@ void APayloadMissionManager::RetryMission()
 		}
 	}
 	DamageableTargets.Empty();
+
+	// Clear any pre-HUD logs queued during the failed mission so they don't
+	// flush into the HUD at retry start.
+	PendingMissionLogs.Reset();
 
 	HandleMissionStart();
 }

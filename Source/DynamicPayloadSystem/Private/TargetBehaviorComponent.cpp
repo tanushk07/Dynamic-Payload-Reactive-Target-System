@@ -1,5 +1,6 @@
 #include "TargetBehaviorComponent.h"
 #include "DamagableComponent.h"
+#include "DynamicPayloadSystemModule.h"
 
 UTargetBehaviorComponent::UTargetBehaviorComponent()
 {
@@ -44,7 +45,7 @@ void UTargetBehaviorComponent::HandleStructuralStateChanged(
 	}
 
 #if WITH_EDITOR
-	UE_LOG(LogTemp, Display,
+	UE_LOG(LogDynamicPayload, Display,
 		TEXT("[%s] Behavior updated -> SpeedMultiplier: %.2f, CanMove: %s"),
 		*GetOwner()->GetName(),
 		SpeedMultiplier,

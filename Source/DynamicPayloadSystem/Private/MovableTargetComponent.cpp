@@ -1,5 +1,6 @@
 #include "MovableTargetComponent.h"
 #include "TargetBehaviorComponent.h"
+#include "DynamicPayloadSystemModule.h"
 #include "PatrolAreaVolume.h"
 #include "TargetActor.h"
 #include "Components/SplineComponent.h"
@@ -22,7 +23,7 @@ void UMovableTargetComponent::BeginPlay()
 		Owner->GetRootComponent()->Mobility != EComponentMobility::Movable)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogDynamicPayload, Warning,
 			TEXT("[Movement] %s has non-Movable root — disabling MovableTargetComponent"),
 			*Owner->GetName());
 #endif
@@ -221,7 +222,19 @@ void UMovableTargetComponent::MoveAlongSpline(float DeltaTime)
 		return;
 	}
 
-	DistanceAlongSpline = FMath::Min(DistanceAlongSpline + Speed * DeltaTime, SplineLength);
+	DistanceAlongSpline += Speed * DeltaTime;
+
+	// For closed-loop splines (the natural "patrol" case), wrap to the start
+	// instead of stopping at the end. Open splines keep the original clamp
+	// behavior so existing single-traversal setups are unchanged.
+	if (PatrolSpline->IsClosedLoop())
+	{
+		DistanceAlongSpline = FMath::Fmod(DistanceAlongSpline, SplineLength);
+	}
+	else
+	{
+		DistanceAlongSpline = FMath::Min(DistanceAlongSpline, SplineLength);
+	}
 
 	FVector TargetLocation = PatrolSpline->GetLocationAtDistanceAlongSpline(
 		DistanceAlongSpline, ESplineCoordinateSpace::World
@@ -383,8 +396,23 @@ bool UMovableTargetComponent::FindRootSpline(USplineComponent*& OutSpline, float
 {
 	UMovableTargetComponent* Current = ConvoyLeader->FindComponentByClass<UMovableTargetComponent>();
 
+	// Visited-set guard: if a designer accidentally wires a circular convoy
+	// chain (A→B→A), this loop would otherwise spin forever and hang the game.
+	TSet<const UMovableTargetComponent*> Visited;
+
 	while (Current)
 	{
+		if (Visited.Contains(Current))
+		{
+#if WITH_EDITOR
+			UE_LOG(LogDynamicPayload, Error,
+				TEXT("[Convoy] Circular ConvoyLeader chain detected on %s"),
+				*GetOwner()->GetName());
+#endif
+			return false;
+		}
+		Visited.Add(Current);
+
 		if (Current->MovementMode == ETargetMovementMode::PatrolSpline && Current->PatrolSpline)
 		{
 			OutSpline = Current->PatrolSpline;
@@ -410,8 +438,18 @@ float UMovableTargetComponent::CalculateCumulativeFollowDistance() const
 	float Total = 0.f;
 	const UMovableTargetComponent* Current = this;
 
+	// Visited-set guard against circular ConvoyLeader chains. Without it a
+	// pathological setup hangs the entire game thread on every tick.
+	TSet<const UMovableTargetComponent*> Visited;
+
 	while (Current && Current->MovementMode == ETargetMovementMode::ConvoyFollow)
 	{
+		if (Visited.Contains(Current))
+		{
+			break;
+		}
+		Visited.Add(Current);
+
 		Total += Current->FollowDistance;
 
 		if (Current->ConvoyLeader)
@@ -783,15 +821,31 @@ void UMovableTargetComponent::HandleBehaviorUpdated(float NewSpeedMultiplier, bo
 
 USplineComponent* UMovableTargetComponent::ResolveActiveSpline() const
 {
-	if (PatrolSpline)
-		return PatrolSpline;
+	// Iterative walk with visited-set so a circular ConvoyLeader chain does
+	// not stack-overflow this previously-recursive resolver.
+	const UMovableTargetComponent* Current = this;
+	TSet<const UMovableTargetComponent*> Visited;
 
-	if (MovementMode == ETargetMovementMode::ConvoyFollow && ConvoyLeader)
+	while (Current)
 	{
-		if (UMovableTargetComponent* LeaderMove =
-			ConvoyLeader->FindComponentByClass<UMovableTargetComponent>())
+		if (Visited.Contains(Current))
 		{
-			return LeaderMove->ResolveActiveSpline();
+			return nullptr;
+		}
+		Visited.Add(Current);
+
+		if (Current->PatrolSpline)
+		{
+			return Current->PatrolSpline;
+		}
+
+		if (Current->MovementMode == ETargetMovementMode::ConvoyFollow && Current->ConvoyLeader)
+		{
+			Current = Current->ConvoyLeader->FindComponentByClass<UMovableTargetComponent>();
+		}
+		else
+		{
+			break;
 		}
 	}
 
@@ -805,7 +859,7 @@ void UMovableTargetComponent::ValidateConvoySetup()
 	if (!ConvoyLeader)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogTemp, Error,
+		UE_LOG(LogDynamicPayload, Error,
 			TEXT("[Convoy] %s: No ConvoyLeader assigned"), *OwnerActor->GetName());
 #endif
 		return;
@@ -814,7 +868,7 @@ void UMovableTargetComponent::ValidateConvoySetup()
 	if (ConvoyLeader == OwnerActor)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogTemp, Error,
+		UE_LOG(LogDynamicPayload, Error,
 			TEXT("[Convoy] %s: Cannot follow itself"), *OwnerActor->GetName());
 #endif
 		ConvoyLeader = nullptr;

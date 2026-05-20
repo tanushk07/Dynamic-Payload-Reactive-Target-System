@@ -162,6 +162,10 @@ private:
 	float SpeedMultiplier = 1.0f;
 	bool bCanMove = true;
 
+	// UPROPERTY so GC nulls the pointer if the spline actor is destroyed
+	// (level streaming, manual destroy). Without it this becomes a dangling
+	// pointer and any MoveAlongSpline access after the spline dies crashes.
+	UPROPERTY()
 	USplineComponent* PatrolSpline = nullptr;
 	float DistanceAlongSpline = 0.f;
 	bool bOnSpline = false;

@@ -1,5 +1,6 @@
 #include "Explosive.h"
 #include "DamagableComponent.h"
+#include "DynamicPayloadSystemModule.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "Sound/SoundBase.h"
@@ -20,6 +21,11 @@ AExplosive::AExplosive()
 
 	ExplosionVFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ExplosionFX"));
 	ExplosionVFX->SetupAttachment(RootComponent);
+	// UNiagaraComponent defaults to bAutoActivate=true — without disabling it,
+	// the FX plays at spawn time before Explode() and again on the explicit
+	// Activate() in PlayExplosionEffects, or it plays at all for editor-placed
+	// explosives that have bExplodeOnBeginPlay=false.
+	ExplosionVFX->SetAutoActivate(false);
 }
 
 void AExplosive::BeginPlay()
@@ -39,9 +45,17 @@ void AExplosive::BeginPlay()
 
 void AExplosive::Explode()
 {
+	// Re-entry guard — Explode is BlueprintCallable and could be invoked twice
+	// (BeginPlay + manual BP call, or two damage reactions).
+	if (bHasDetonated)
+	{
+		return;
+	}
+	bHasDetonated = true;
+
 	const FVector ExplosionLocation = GetActorLocation();
 #if WITH_EDITOR
-	UE_LOG(LogTemp, Warning, TEXT("=== EXPLOSION TRIGGERED at %s ==="), *ExplosionLocation.ToString());
+	UE_LOG(LogDynamicPayload, Warning, TEXT("=== EXPLOSION TRIGGERED at %s ==="), *ExplosionLocation.ToString());
 #endif
 
 	TArray<FOverlapResult> Overlaps = ScanForTargets();
@@ -118,10 +132,13 @@ void AExplosive::ApplyDamageToActors(const TArray<FOverlapResult>& Overlaps)
 
 		if (FinalDamage > MinDamageToApply)
 		{
+			// InstigatorController (rather than nullptr) so kill credit, AI
+			// perception, and scoring systems can attribute the damage to the
+			// pawn that originally dropped the payload.
 			UGameplayStatics::ApplyDamage(
 				HitActor,
 				FinalDamage,
-				nullptr,
+				GetInstigatorController(),
 				this,
 				DamageType
 			);
@@ -169,7 +186,10 @@ float AExplosive::CalculateFinalDamage(AActor* Victim, const FVector& ExplosionP
 
 	const FVector ToTarget = ClosestPoint - ExplosionPos;
 	const float DirectionalFactor = ComputeDirectionalFactor(ToTarget);
-	const float VisibilityFactor = HasLineOfSight(ClosestPoint) ? 1.f : 0.3f;
+	// Pass Victim so the trace ignores the target's own collision — otherwise
+	// the line ends on the target's hull, reports "blocked", and every visible
+	// target silently gets 0.3x damage.
+	const float VisibilityFactor = HasLineOfSight(ClosestPoint, Victim) ? 1.f : 0.3f;
 
 	const float BlastDamage =
 		MaxDamage * DistanceFactor * VisibilityFactor;
@@ -219,20 +239,30 @@ float AExplosive::ComputeDirectionalFactor(const FVector& ToTarget) const
 	return FMath::Lerp(0.85f, 1.0f, (Dot + 1.f) * 0.5f);
 }
 
-bool AExplosive::HasLineOfSight(const FVector& TargetPoint) const
+bool AExplosive::HasLineOfSight(const FVector& TargetPoint, const AActor* IgnoreActor) const
 {
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		// Defensive: assume visible if no world (only reachable during teardown).
+		return true;
+	}
+
 	FHitResult Hit;
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
+	if (IgnoreActor)
+	{
+		Params.AddIgnoredActor(IgnoreActor);
+	}
 
-	const bool bBlocked =
-		GetWorld()->LineTraceSingleByChannel(
-			Hit,
-			GetActorLocation(),
-			TargetPoint,
-			ECC_Visibility,
-			Params
-		);
+	const bool bBlocked = World->LineTraceSingleByChannel(
+		Hit,
+		GetActorLocation(),
+		TargetPoint,
+		ECC_Visibility,
+		Params
+	);
 
 	return !bBlocked;
 }
