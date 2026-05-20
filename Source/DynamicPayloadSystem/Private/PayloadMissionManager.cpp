@@ -314,7 +314,11 @@ void APayloadMissionManager::NotifyAttemptConsumed()
 	if (MissionState != EPayloadMissionState::InProgress)
 		return;
 
-	AttemptsRemaining--;
+	// Clamp so BP code that calls SpawnAndAttachPayload manually after attempts
+	// hit zero (then detaches) doesn't drive the counter negative. Every downstream
+	// gate uses <= 0 so negativity wouldn't matter for correctness, but it breaks
+	// UI displays that show the count.
+	AttemptsRemaining = FMath::Max(AttemptsRemaining - 1, 0);
 
 	EmitMissionLog(
 		FString::Printf(TEXT("Attempt consumed. \nRemaining attempts: %d"), AttemptsRemaining),
@@ -430,6 +434,16 @@ void APayloadMissionManager::EnterWaitingForLastPayload()
 	// Single, canonical entry into the "attempts exhausted, a payload may
 	// still be live" state. Every caller funnels through here so the
 	// watchdog is ALWAYS armed whenever bWaitingForLastPayload is true.
+	//
+	// Idempotency: once we're in the waiting state, additional calls (e.g. BP
+	// code that manually respawns + detaches a payload after attempts are
+	// already exhausted) are no-ops. Otherwise each re-entry would reset the
+	// 10s watchdog and a determined caller could indefinitely postpone
+	// resolution, breaking the watchdog's "hard upper bound" promise.
+	if (bWaitingForLastPayload)
+	{
+		return;
+	}
 	bWaitingForLastPayload = true;
 	bTimerFrozen = true;
 	StartLastPayloadWatchdog();
@@ -499,8 +513,9 @@ void APayloadMissionManager::EmitMissionLog(
 	{
 		// HUD exists but won't receive logs. Drop the entry rather than queuing
 		// it, otherwise PendingMissionLogs would grow unbounded for the entire
-		// session. Warn once per mission manager instance.
-#if WITH_EDITOR
+		// session. Warn once per mission manager instance — outside WITH_EDITOR
+		// so shipping builds get the diagnostic too. Without it, consumers see
+		// silent log drop and have no signal pointing at the missing interface.
 		if (!bWarnedAboutMissingInterface)
 		{
 			UE_LOG(LogDynamicPayload, Warning,
@@ -508,7 +523,6 @@ void APayloadMissionManager::EmitMissionLog(
 				*HUD->GetClass()->GetName());
 			bWarnedAboutMissingInterface = true;
 		}
-#endif
 		PendingMissionLogs.Reset();
 		return;
 	}
