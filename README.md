@@ -208,6 +208,118 @@ FOnDamageTaken OnDamageTaken;
 
 ---
 
+## Configuration Reference
+
+Every editable property explained, with default values, units, and tuning examples. This is the manual for the `MovableTargetComponent`; other component references (Payload, Explosive, Damagable, MissionManager) follow the same pattern.
+
+### `UMovableTargetComponent` — properties
+
+#### Movement Configuration
+
+| Property | Default | Units | What it does |
+|---|---|---|---|
+| **`BaseSpeed`** | `300` | cm/s | The unit's base linear speed. Actual speed = `BaseSpeed × SpeedMultiplier` (the multiplier comes from `TargetBehaviorComponent` — Intact = 1.0×, Damaged = 0.5×, Destroyed = 0×). |
+| **`MovementMode`** | `None` | enum | Selects which movement algorithm runs. `None` = static target. `PatrolSpline` = follow a spline. `PatrolArea` = wander a volume. `ConvoyFollow` = chain behind a leader. |
+| **`YawTurnSpeed`** | `120` | deg/s | Max rotation rate for visual yaw smoothing. At 120 deg/s a full 360° takes 3 seconds. Lower for heavy vehicles, higher for nimble units. |
+
+**Tuning `BaseSpeed`:**
+- Walking patrol guard: `100–200`
+- Slow truck (default-like): `250–400`
+- Civilian car: `500–700`
+- Fast scout / motorcycle: `800–1200`
+
+#### Spline Patrol (`MovementMode = PatrolSpline`)
+
+| Property | Default | Units | What it does |
+|---|---|---|---|
+| **`PatrolSplineActor`** | `nullptr` | AActor* | Drag a Spline actor into this slot. The component auto-finds its `USplineComponent` and follows it. |
+
+**Tip:** In the spline's Details panel, tick **Closed Loop** for a patrol that loops forever. Open splines run to the end and stop (intentional — set `bClosedLoop = true` if you want repeat).
+
+#### Patrol Area (`MovementMode = PatrolArea`)
+
+| Property | Default | Units | What it does |
+|---|---|---|---|
+| **`PatrolArea`** | `nullptr` | APatrolAreaVolume* | The volume in which random waypoints are picked. Place an `APatrolAreaVolume`, set its box bounds, drag it here. |
+| **`ArrivalTolerance`** | `50` | cm | Distance at which the unit is considered "arrived" at a waypoint. Smaller = more precise; can oscillate near sharp turns. Larger = smoother; unit cuts corners. For tanks/trucks try `100–200`. |
+| **`WaitTimeAtPoint`** | `2.0` | seconds | Pause duration at each arrived waypoint before picking the next. Set `0` for continuous motion; `5–10` for "guard looks around" feel. |
+| **`MinTurningRadius`** | `800` | cm | Arc curvature for vehicle turning. Smaller = tighter turns. `500` car · `800` truck · `1200` semi-trailer · `200` agile light vehicle. Min clamp = 100. |
+| **`MinPatrolSpeed`** | `40` | cm/s | Floor on speed during sharp turns. The arc steerer slows the unit on wide turns (× 0.3–1.0); this is the absolute minimum. Set `0` to allow full stop while turning, default `40` keeps the unit crawling forward. |
+| **`MinWaypointDistance`** | `0` | cm | Reject candidate waypoints closer than this. `0` = automatic (`MinTurningRadius × 2`, recommended). Use a custom value to force long stretches. |
+| **`OrbitTimeoutDuration`** | `8.0` | seconds | If the unit hasn't made meaningful progress toward a waypoint in this many seconds, it abandons it and picks a new one. Detects "orbit" cases where the destination is inside the turning circle. |
+
+**Tuning preset — light scout vehicle:**
+```
+BaseSpeed=600, MinTurningRadius=400, MinPatrolSpeed=100,
+WaitTimeAtPoint=0.5, ArrivalTolerance=100
+```
+
+**Tuning preset — heavy tank:**
+```
+BaseSpeed=200, MinTurningRadius=1200, MinPatrolSpeed=20,
+YawTurnSpeed=60, GroundAlignInterpSpeed=3
+```
+
+#### Convoy Follow (`MovementMode = ConvoyFollow`)
+
+| Property | Default | Units | What it does |
+|---|---|---|---|
+| **`ConvoyLeader`** | `nullptr` | AActor* | The actor this unit follows. Can be any actor with a `MovableTargetComponent` (typically another vehicle on a Spline). |
+| **`FollowDistance`** | `500` | cm | Desired gap to the leader, measured along the spline. `200–300` tight military formation · `500–800` normal traffic · `1500+` scattered. |
+| **`ConvoyFollowStiffness`** | `1.0` | gain (0.1–5.0) | Proportional-control gain for distance correction. Higher = snappier catch-up but risks oscillation. `0.5` gentle, `1.0` balanced (default), `2.0+` aggressive. |
+| **`ConvoyMaxSpeedMultiplier`** | `1.5` | × BaseSpeed (1.0–3.0) | Cap on how much faster a follower can go than its `BaseSpeed` when catching up. Increase if followers fall behind during fast leader turns. |
+| **`MinConvoyFollowDistance`** | `200` | cm | Soft brake threshold. When the forward trace finds something closer than this, the follower brakes proportionally. Prevents rear-ending when the leader stops. |
+| **`ConvoyForwardTraceRange`** | `600` | cm | How far ahead the collision-avoidance trace looks. Must be > `MinConvoyFollowDistance` so braking starts *before* contact. |
+
+**Auto-chaining:** Place multiple followers with the same `ConvoyLeader` and they'll auto-rewire on `BeginPlay` — closest follower keeps the original leader, the next follower follows it, and so on. No manual chain wiring needed.
+
+**Tuning preset — tight military convoy:**
+```
+FollowDistance=300, ConvoyFollowStiffness=1.5,
+MinConvoyFollowDistance=200, ConvoyForwardTraceRange=500
+```
+
+**Tuning preset — loose civilian traffic:**
+```
+FollowDistance=800, ConvoyFollowStiffness=0.8,
+MinConvoyFollowDistance=400, ConvoyForwardTraceRange=900
+```
+
+#### Ground Alignment
+
+| Property | Default | Units | What it does |
+|---|---|---|---|
+| **`bUseGroundAlignment`** | `true` | bool | Toggle the 4-point pitch/roll terrain alignment. Disable for flying units (helicopters, drones). |
+| **`GroundOffset`** | `0` | cm | Vertical offset added to the computed ground Z. Use a small positive value (e.g. `10`) if the unit's wheels/feet visually clip into the terrain. Negative values sink the unit. |
+| **`GroundAlignInterpSpeed`** | `6.0` | 1/s | How quickly the unit interpolates to the terrain's pitch/roll. Higher = snappier (fast bike), lower = smoother (heavy truck body lags slightly). |
+| **`FrontTraceOffset`** | `200` | cm | Distance forward from actor origin where the front ground trace starts. Set to ~half the vehicle's length. |
+| **`RearTraceOffset`** | `200` | cm | Distance backward from actor origin where the rear ground trace starts. Usually matches `FrontTraceOffset`. |
+| **`TraceHeight`** | `1000` | cm | Vertical range (cm above + cm below origin) for each trace. `1000` = 10m up + 10m down. Increase for cliffs / extreme terrain; performance is O(1) so this is cheap. |
+
+**Tuning preset — flying drone:**
+```
+bUseGroundAlignment=false
+```
+
+**Tuning preset — bike-sized vehicle:**
+```
+FrontTraceOffset=80, RearTraceOffset=80, GroundAlignInterpSpeed=10
+```
+
+**Tuning preset — battleship-sized:**
+```
+FrontTraceOffset=600, RearTraceOffset=600, GroundAlignInterpSpeed=2, TraceHeight=2000
+```
+
+### Property interactions worth knowing
+
+- **`BaseSpeed` × `MovementMode` × `SpeedMultiplier`:** Effective speed = `BaseSpeed × SpeedMultiplier`. `SpeedMultiplier` is auto-driven by `TargetBehaviorComponent` based on the structural state. So a "Damaged" target at `BaseSpeed = 600` actually moves at `300` (×0.5), and a "Destroyed" target stops (×0).
+- **`MinTurningRadius` × `MinWaypointDistance`:** When `MinWaypointDistance = 0`, the patrol picks waypoints at least `MinTurningRadius × 2` away — this guarantees the unit can physically reach them without orbiting. Override only if you have a specific reason.
+- **`ConvoyForwardTraceRange` < `MinConvoyFollowDistance`:** Bad combination — the brake threshold is beyond the trace range, so braking never kicks in until contact. Always keep `ConvoyForwardTraceRange ≥ MinConvoyFollowDistance + 100`.
+- **Open vs Closed Spline:** Setting the spline to closed loop (in the spline actor) makes patrols repeat forever. Open splines stop at the end. Whether to loop is a per-spline choice on the spline actor, not a `MovableTargetComponent` property.
+
+---
+
 ## Testing Guide & Demo Map
 
 A reference demo map ships under `Content/Demos/DemoMap.umap` and exercises every public-facing feature. The walkthrough below describes both **what the demo map contains** and **how to verify each system works**. Use it for smoke-testing after upgrades, or as a starting template for your own integration.
