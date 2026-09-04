@@ -88,6 +88,30 @@ void UDamagableComponent::SetHighlightEnabled(bool bEnabled)
 	}
 }
 
+void UDamagableComponent::Revive()
+{
+	// Order matters: a Destroyed target already has a lifespan counting down
+	// toward despawn, and clearing it first means a revive inside that window
+	// keeps the actor alive rather than losing it a frame later.
+	if (AActor* Owner = GetOwner())
+	{
+		Owner->SetLifeSpan(0.f);
+	}
+
+	CurrentHealth = MaxHealth;
+
+	const EStructuralState Previous = StructuralState;
+	StructuralState = EStructuralState::Intact;
+
+	// Only broadcast on an actual transition. Listeners rebuild render state
+	// from this, and firing it for targets that were never damaged would churn
+	// meshes and collision on every retry for no reason.
+	if (Previous != StructuralState)
+	{
+		OnStructuralStateChanged.Broadcast(StructuralState);
+	}
+}
+
 void UDamagableComponent::UpdateStructuralState()
 {
 	// Runtime safety: BeginPlay snaps MaxHealth up to 1.0 if a designer left it

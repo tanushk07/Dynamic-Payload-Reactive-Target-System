@@ -246,6 +246,16 @@ public:
 	 *  into things instead of over-running them. */
 	float GetApproachSpeedLimit(float Distance) const;
 
+	/** Put this vehicle back exactly where it began, with every scrap of
+	 *  movement state cleared.
+	 *
+	 *  Restoring the transform alone is not enough: distance along the spline,
+	 *  the convoy gap integrator, blend alphas and the smoothed ground height
+	 *  all persist, so a vehicle teleported home while those survive would
+	 *  immediately drive back to where it was. */
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	void ResetToStart();
+
 	/** Recomputes every Resolved* value from the cached mesh bounds. Called
 	 *  from CacheOwnerBounds, so a damage-state mesh swap re-derives sizing. */
 	void RefreshDerivedGeometry();
@@ -326,6 +336,9 @@ private:
 
 	float CachedLateralExtent = 100.f;
 	float CachedLongitudinalExtent = 200.f;
+
+	/** Where this vehicle stood at BeginPlay; the target of ResetToStart(). */
+	FTransform StartTransform;
 
 	// convoy PD state
 	float PrevGapError = 0.f;
