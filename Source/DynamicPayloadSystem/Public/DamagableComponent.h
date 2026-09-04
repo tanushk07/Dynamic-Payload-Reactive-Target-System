@@ -75,4 +75,8 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Damage")
 	FOnDamageTaken OnDamageTaken;
+
+	/** Toggle debug logging for damage and structural state changes (editor only). */
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bShowDebug = false;
 };

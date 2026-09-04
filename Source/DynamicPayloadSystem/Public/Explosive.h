@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/OverlapResult.h"
+#include "Chaos/ChaosEngineInterface.h"
 #include "Explosive.generated.h"
 
 class UNiagaraComponent;
@@ -121,6 +122,12 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Explosion|Camera")
 	float MaxShakeRadius = 2000.f;
+
+	/* ================= Debug ================= */
+
+	/** Toggle debug draw for explosion radii (editor only). */
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bShowDebug = false;
 
 	/* ================= Events ================= */
 

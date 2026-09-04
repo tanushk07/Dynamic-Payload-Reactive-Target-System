@@ -56,4 +56,8 @@ public:
 		FVector NormalImpulse,
 		const FHitResult& Hit
 	);
+
+	/** Toggle debug logging for payload arm/fuse/impact events (editor only). */
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bShowDebug = false;
 };

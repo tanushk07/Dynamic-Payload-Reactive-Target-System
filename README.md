@@ -457,7 +457,7 @@ After you've built the demo map in your test project, ship it with the plugin so
 
 1. **Right-click `Content/Demos/DemoMap` in the test project** → Asset Actions → Migrate.
 2. UE walks the dependency tree and shows everything the map references (textures, meshes, materials, the BP classes).
-3. **Set destination** to `D:/UE_5.7/Engine/Plugins/Marketplace/DynamicPayloadSystem/Content/Demos/`.
+3. **Set destination** to `D:/UE_5.8/Engine/Plugins/Marketplace/DynamicPayloadSystem/Content/Demos/`.
 4. UE copies all dependencies and rewrites references to the plugin paths.
 5. Verify by opening a *new* project, enabling the plugin, and opening `/DynamicPayloadSystem/Demos/DemoMap` from the Content Browser.
 
