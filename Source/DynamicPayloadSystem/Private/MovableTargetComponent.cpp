@@ -21,6 +21,13 @@ void UMovableTargetComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Captured before the early-out below, so even a vehicle that never ticks
+	// still knows where home is.
+	if (GetOwner())
+	{
+		StartTransform = GetOwner()->GetActorTransform();
+	}
+
 	AActor* Owner = GetOwner();
 	if (Owner && Owner->GetRootComponent() &&
 		Owner->GetRootComponent()->Mobility != EComponentMobility::Movable)
@@ -939,6 +946,57 @@ float UMovableTargetComponent::GetLookaheadDistance() const
 float UMovableTargetComponent::GetApproachSpeedLimit(float Distance) const
 {
 	return FMath::Sqrt(2.f * GetBrakeRate() * FMath::Max(Distance, 0.f));
+}
+
+void UMovableTargetComponent::ResetToStart()
+{
+	AActor* Owner = GetOwner();
+	if (!Owner)
+		return;
+
+	// TeleportPhysics so a simulating body is moved rather than swept - a sweep
+	// from wherever the vehicle died back to the start line would collide with
+	// everything in between.
+	Owner->SetActorTransform(StartTransform, false, nullptr, ETeleportType::TeleportPhysics);
+
+	// --- path progress ---
+	DistanceAlongSpline = 0.f;
+	bOnSpline = false;
+	ConvoyDistanceAlongSpline = 0.f;
+	bConvoyInitialized = false;
+	bConvoyOnSpline = false;
+	PrevRootSplineDistance = 0.f;
+
+	// --- patrol state machine ---
+	PatrolState = EPatrolAreaState::Idle;
+	CurrentDestination = FVector::ZeroVector;
+	WaitTimeRemaining = 0.f;
+	OrbitTimer = 0.f;
+	LastDistanceToTarget = 0.f;
+
+	// --- controllers: leaving these primed would make the first frame after a
+	//     reset act on an error measured before it ---
+	CurrentSpeed = 0.f;
+	PrevGapError = 0.f;
+	bGapErrorInitialized = false;
+	SplineBlendAlpha = 1.f;
+	ConvoyBlendAlpha = 1.f;
+
+	// --- ground conforming ---
+	SmoothedZ = StartTransform.GetLocation().Z;
+	bZInitialized = false;
+	DesiredMovementYaw = StartTransform.Rotator().Yaw;
+
+	// Follower cache is keyed on time; invalidate so the convoy is rediscovered.
+	CachedConvoyFollowersValidUntil = -1.f;
+
+	SetComponentTickEnabled(true);
+
+	// Re-derive the entry point on the path from the restored transform.
+	if (PatrolSpline)
+	{
+		InitializeSplineMovement();
+	}
 }
 
 void UMovableTargetComponent::CacheOwnerBounds()

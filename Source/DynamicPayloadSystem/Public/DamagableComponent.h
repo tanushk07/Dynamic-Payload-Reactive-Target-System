@@ -54,6 +54,17 @@ public:
 	FString GetReadableName() const;
 	void SetHighlightEnabled(bool bEnabled);
 
+	/** Restore this target to full health and the Intact state.
+	 *
+	 *  Cancels any despawn already scheduled by DestroyDelay, so a target can be
+	 *  brought back during the seconds between "destroyed" and "gone". Broadcasts
+	 *  OnStructuralStateChanged only on a real transition, which is what puts the
+	 *  mesh, collision and ticking back (see ATargetActor).
+	 *
+	 *  Safe to call on an undamaged target: it becomes a no-op. */
+	UFUNCTION(BlueprintCallable, Category = "Damage")
+	void Revive();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Damage")
 	EStructuralState StructuralState = EStructuralState::Intact;
 

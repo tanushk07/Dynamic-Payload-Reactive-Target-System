@@ -38,6 +38,19 @@ void ATargetActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Snapshot the untouched starting state before anything can damage or move
+	// this actor. Everything a mission retry restores is read back from here.
+	InitialTransform = GetActorTransform();
+	bInitialActorTickEnabled = IsActorTickEnabled();
+	if (Mesh)
+	{
+		InitialCollisionEnabled = Mesh->GetCollisionEnabled();
+	}
+	if (MovementComponent)
+	{
+		bInitialMovementTickEnabled = MovementComponent->IsComponentTickEnabled();
+	}
+
 	if (!IntactMesh && Mesh)
 	{
 		IntactMesh = Mesh->GetStaticMesh();
@@ -113,5 +126,20 @@ void ATargetActor::HandleStructuralStateChanged(EStructuralState NewState)
 			MovementComponent->SetComponentTickEnabled(false);
 		}
 		SetActorTickEnabled(false);
+	}
+	else
+	{
+		// Coming back from Destroyed - a mission retry reviving this target.
+		// Everything the branch above switched off has to be switched back on,
+		// otherwise a revived truck is invisible to traces and never moves.
+		Mesh->SetCollisionEnabled(InitialCollisionEnabled);
+		Mesh->bRenderCustomDepth = bIsMissionTarget;
+		Mesh->MarkRenderStateDirty();
+
+		if (MovementComponent)
+		{
+			MovementComponent->SetComponentTickEnabled(bInitialMovementTickEnabled);
+		}
+		SetActorTickEnabled(bInitialActorTickEnabled);
 	}
 }

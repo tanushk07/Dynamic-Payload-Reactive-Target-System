@@ -9,6 +9,10 @@
 #include "MissionLogReceiver.h"
 #include "GameFramework/HUD.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerStart.h"
+#include "Components/PrimitiveComponent.h"
+#include "MovableTargetComponent.h"
 
 APayloadMissionManager::APayloadMissionManager()
 {
@@ -113,6 +117,9 @@ void APayloadMissionManager::StartMission()
 		RegisterMissionTarget(*It);
 	}
 	InitialTargetCount = DamageableTargets.Num();
+
+	// First run only - see CaptureMissionSnapshot.
+	CaptureMissionSnapshot();
 
 	GetWorld()->GetTimerManager().SetTimer(
 		MissionTimerHandle,
@@ -611,6 +618,134 @@ void APayloadMissionManager::NotifyKamikazeTriggered()
 	}
 }
 
+void APayloadMissionManager::CaptureMissionSnapshot()
+{
+	if (bMissionSnapshotCaptured)
+		return;
+
+	MissionTargetSnapshots.Reset();
+	for (AActor* Actor : DamageableTargets)
+	{
+		if (!IsValid(Actor))
+			continue;
+
+		FMissionTargetSnapshot Snapshot;
+		Snapshot.TargetClass = Actor->GetClass();
+		Snapshot.LiveActor = Actor;
+
+		// Prefer the transform the target recorded at BeginPlay. Reading the
+		// actor's transform here would capture wherever a convoy had driven to
+		// during the countdown, not where the level author placed it.
+		if (const ATargetActor* Target = Cast<ATargetActor>(Actor))
+		{
+			Snapshot.SpawnTransform = Target->GetInitialTransform();
+		}
+		else
+		{
+			Snapshot.SpawnTransform = Actor->GetActorTransform();
+		}
+
+		MissionTargetSnapshots.Add(Snapshot);
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		if (const APlayerController* PC = World->GetFirstPlayerController())
+		{
+			if (const APawn* Pawn = PC->GetPawn())
+			{
+				PlayerRestartTransform = Pawn->GetActorTransform();
+			}
+		}
+	}
+
+	bMissionSnapshotCaptured = true;
+}
+
+void APayloadMissionManager::ResetPlayerToStart()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+		return;
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn)
+		return;
+
+	FTransform Destination = PlayerRestartTransform;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		Destination = It->GetActorTransform();
+		break;
+	}
+
+	// Clear momentum BEFORE moving. Teleporting a simulating body without this
+	// carries its old velocity to the new position, so a drone that was diving
+	// at the ground resumes diving the instant it arrives home.
+	if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Pawn->GetRootComponent()))
+	{
+		if (Prim->IsSimulatingPhysics())
+		{
+			Prim->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			Prim->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+		}
+	}
+
+	Pawn->TeleportTo(Destination.GetLocation(), Destination.Rotator(), false, true);
+}
+
+void APayloadMissionManager::ResetMissionWorld()
+{
+	if (!bResetWorldOnRetry)
+		return;
+
+	UWorld* World = GetWorld();
+	if (!World)
+		return;
+
+	for (FMissionTargetSnapshot& Snapshot : MissionTargetSnapshots)
+	{
+		AActor* Actor = Snapshot.LiveActor.Get();
+
+		if (!IsValid(Actor))
+		{
+			// Already despawned - reviving is not an option, it has to be built
+			// again from the class and transform recorded at mission start.
+			if (!Snapshot.TargetClass)
+				continue;
+
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			Actor = World->SpawnActor<AActor>(
+				Snapshot.TargetClass, Snapshot.SpawnTransform, SpawnParams);
+
+			Snapshot.LiveActor = Actor;
+			if (!Actor)
+				continue;
+		}
+		else if (UDamagableComponent* DC = Actor->FindComponentByClass<UDamagableComponent>())
+		{
+			DC->Revive();
+		}
+
+		// Runs for respawned and revived targets alike: a freshly spawned actor
+		// is already home, but this also clears the movement state, and a
+		// survivor needs both.
+		if (UMovableTargetComponent* MC = Actor->FindComponentByClass<UMovableTargetComponent>())
+		{
+			MC->ResetToStart();
+		}
+	}
+
+	if (bResetPlayerOnRetry)
+	{
+		ResetPlayerToStart();
+	}
+}
+
 void APayloadMissionManager::RetryMission()
 {
 	GetWorld()->GetTimerManager().ClearTimer(MissionTimerHandle);
@@ -652,6 +787,11 @@ void APayloadMissionManager::RetryMission()
 	// Clear any pre-HUD logs queued during the failed mission so they don't
 	// flush into the HUD at retry start.
 	PendingMissionLogs.Reset();
+
+	// Deliberately after the unbind above: reviving a target broadcasts a
+	// structural-state change, and this manager should not be listening to the
+	// mission it is in the middle of tearing down.
+	ResetMissionWorld();
 
 	HandleMissionStart();
 }

@@ -17,6 +17,30 @@ enum class EPayloadMissionState : uint8
 	Failed
 };
 
+/**
+ * What a mission target looked like before anyone shot at it.
+ *
+ * A destroyed target despawns (DamagableComponent::DestroyDelay), so a retry
+ * cannot simply revive what is left in the world - the actor is gone. Recording
+ * the class and the starting transform is what makes rebuilding it possible.
+ */
+USTRUCT()
+struct FMissionTargetSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TSubclassOf<AActor> TargetClass;
+
+	UPROPERTY()
+	FTransform SpawnTransform = FTransform::Identity;
+
+	/** Weak on purpose: this is the actor that may have despawned, and holding
+	 *  a hard reference would keep a destroyed target alive in memory. */
+	UPROPERTY()
+	TWeakObjectPtr<AActor> LiveActor;
+};
+
 UCLASS()
 class DYNAMICPAYLOADSYSTEM_API APayloadMissionManager : public AActor
 {
@@ -77,6 +101,24 @@ protected:
 
 	UPROPERTY()
 	TArray<FGameLogEntry> PendingMissionLogs;
+
+	/** The original line-up, recorded the first time a mission starts and reused
+	 *  by every subsequent reset. Never re-captured from a world that has
+	 *  already been fought over, or each retry would bake in the last one's
+	 *  losses and the mission would get quietly easier every time. */
+	UPROPERTY()
+	TArray<FMissionTargetSnapshot> MissionTargetSnapshots;
+
+	UPROPERTY()
+	FTransform PlayerRestartTransform = FTransform::Identity;
+
+	bool bMissionSnapshotCaptured = false;
+
+	/** Records the starting line-up. No-op once it has run. */
+	void CaptureMissionSnapshot();
+
+	/** Teleports the player pawn home and clears its physics state. */
+	void ResetPlayerToStart();
 
 	/** Per-instance "we've already warned about this" flag. Was a function-static
 	 *  bool previously, which persisted across PIE sessions — so devs who fixed
@@ -150,6 +192,26 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Mission")
 	void RetryMission();
+
+	/**
+	 * Put the world back the way it was when the mission first started:
+	 * every target alive and intact at its original transform, every vehicle
+	 * returned to its start with movement state cleared, and the player back
+	 * at the PlayerStart with no leftover velocity.
+	 *
+	 * Idempotent - calling it twice in a row is harmless.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Mission")
+	void ResetMissionWorld();
+
+	/** Set false to make Retry reset only the clock and counters, leaving the
+	 *  world as the player left it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mission")
+	bool bResetWorldOnRetry = true;
+
+	/** Also return the player pawn to the PlayerStart on a world reset. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mission")
+	bool bResetPlayerOnRetry = true;
 
 	UPROPERTY(EditAnywhere, Category = "Mission")
 	float QuitDelaySeconds = 3.0f;
