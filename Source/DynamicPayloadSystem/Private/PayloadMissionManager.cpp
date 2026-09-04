@@ -33,10 +33,27 @@ void APayloadMissionManager::BeginPlay()
 
 void APayloadMissionManager::RequestMissionStart()
 {
-	if (bMissionModeEnabled)
+	if (!bMissionModeEnabled)
+		return;
+
+	// A finished mission leaves MissionState at Success or Failed, and
+	// StartMission refuses to run unless it is NotStarted. Nothing used to put
+	// it back, so every Play after the first mission was silently dead: the
+	// countdown ran, StartMission returned immediately, and therefore no
+	// targets were registered, no snapshot was captured, and - because
+	// SpawnAndAttachPayload is gated on the mission being InProgress - the
+	// drone never received a payload either.
+	//
+	// RetryMission already performs exactly the teardown a fresh start needs
+	// (timers, counters, delegate bindings, world reset) and calls
+	// HandleMissionStart itself, so hand off to it rather than duplicating.
+	if (MissionState != EPayloadMissionState::NotStarted)
 	{
-		HandleMissionStart();
+		RetryMission();
+		return;
 	}
+
+	HandleMissionStart();
 }
 
 void APayloadMissionManager::HandleMissionStart()
@@ -104,6 +121,14 @@ void APayloadMissionManager::StartMission()
 	MissionState = EPayloadMissionState::InProgress;
 	OnMissionStateChanged.Broadcast(MissionState);
 	RemainingTime = MissionDuration;
+
+	// Reset here, at the moment the mission actually begins, rather than only
+	// when Retry was pressed. The countdown runs for several seconds and the
+	// vehicles keep driving through it, so a world reset performed before the
+	// countdown has already been undone by the time the player takes control -
+	// which looks exactly like the reset never happened. No-op on the first
+	// mission, when no snapshot exists yet.
+	ResetMissionWorld();
 
 	TotalDamageInflicted = 0.f;
 	TargetsDestroyedCount = 0;
