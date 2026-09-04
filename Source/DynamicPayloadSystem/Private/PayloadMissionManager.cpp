@@ -227,6 +227,23 @@ void APayloadMissionManager::OnTargetStructuralStateChanged(EStructuralState New
 		{
 			TargetsDestroyedCount++;
 			DC->SetHighlightEnabled(false);
+
+			// Cancel the despawn that DestroyDelay just scheduled.
+			//
+			// A target's behaviour lives in per-instance references set by the
+			// level author - the spline it drives, the leader it follows, its
+			// movement mode. None of that is in the class defaults, so an actor
+			// rebuilt from its class comes back unable to move, and a rebuilt
+			// leader leaves every follower pointing at a destroyed actor.
+			//
+			// Keeping the wreck means a retry can Revive() the ORIGINAL actor
+			// with all of that intact. The wreck stays visible in the meantime,
+			// which is what a destroyed vehicle should look like anyway.
+			if (bResetWorldOnRetry)
+			{
+				Actor->SetLifeSpan(0.f);
+			}
+
 			DamageableTargets.RemoveAt(i);
 		}
 	}
@@ -426,6 +443,25 @@ bool APayloadMissionManager::SpawnPayloadOnCarrier()
 	if (!World)
 		return false;
 
+	// The possessed pawn first. A world scan picks whichever carrier the actor
+	// iterator happens to reach first, and any flow that spawns a fresh pawn
+	// without destroying the old one (returning to the menu and pressing Play
+	// again) leaves stale drones behind - so the payload would attach to a
+	// ghost the player is not flying, and appear never to spawn at all.
+	if (APlayerController* PC = World->GetFirstPlayerController())
+	{
+		if (APawn* PlayerPawn = PC->GetPawn())
+		{
+			if (UPayloadAttachmentComponent* PawnComp =
+				PlayerPawn->FindComponentByClass<UPayloadAttachmentComponent>())
+			{
+				PawnComp->SpawnAndAttachPayload();
+				return true;
+			}
+		}
+	}
+
+	// No possessed carrier (AI-driven or headless): fall back to a world scan.
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		if (UPayloadAttachmentComponent* PayloadComp =
@@ -572,6 +608,14 @@ void APayloadMissionManager::NotifyDroneDestroyed()
 	if (MissionState != EPayloadMissionState::InProgress)
 		return;
 
+	// A kamikaze that takes out the LAST target has won, and losing the drone
+	// to its own blast must not overwrite that. Destroyed targets are removed
+	// from DamageableTargets as they die, so an empty list here means the
+	// field is clear and HandleAllTargetsDestroyed is already queued for the
+	// next tick - bow out and let it resolve as a success.
+	if (DamageableTargets.Num() == 0)
+		return;
+
 	FailMission(TEXT("Drone destroyed"));
 }
 
@@ -710,10 +754,23 @@ void APayloadMissionManager::ResetMissionWorld()
 
 		if (!IsValid(Actor))
 		{
-			// Already despawned - reviving is not an option, it has to be built
-			// again from the class and transform recorded at mission start.
+			// Last resort. Normally unreachable: OnTargetStructuralStateChanged
+			// cancels the lifespan of destroyed targets precisely so they are
+			// still here to revive. We only get here if the target left play by
+			// some other route (bResetWorldOnRetry toggled mid-mission, a
+			// Blueprint Destroy, level streaming).
+			//
+			// A class-default rebuild CANNOT restore the level author's
+			// per-instance wiring - spline, convoy leader, movement mode - so
+			// the replacement will sit still. Warn rather than fail silently.
 			if (!Snapshot.TargetClass)
 				continue;
+
+			UE_LOG(LogDynamicPayload, Warning,
+				TEXT("[Mission] Target '%s' left play and had to be rebuilt from its class. "
+					 "Level-instance movement settings (spline, convoy leader, mode) are lost "
+					 "and it will not move."),
+				*Snapshot.TargetClass->GetName());
 
 			FActorSpawnParameters SpawnParams;
 			SpawnParams.SpawnCollisionHandlingOverride =

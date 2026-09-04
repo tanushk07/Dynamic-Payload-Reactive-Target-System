@@ -150,12 +150,16 @@ void UDamagableComponent::UpdateStructuralState()
 	if (NewState != StructuralState)
 	{
 		StructuralState = NewState;
-		OnStructuralStateChanged.Broadcast(StructuralState);
 
 		// Wire DestroyDelay through SetLifeSpan so the actor self-despawns
 		// after the destroyed-state visuals (mesh swap, glow off) have played.
 		// SetLifeSpan(0) means "don't auto-destroy", so a user can opt out by
 		// setting DestroyDelay = 0 and handling cleanup themselves.
+		//
+		// Armed BEFORE the broadcast, deliberately. Listeners are entitled to
+		// override this - the mission manager cancels it so a destroyed target
+		// survives to be revived on a retry - and a listener cannot cancel a
+		// lifespan that has not been set yet.
 		if (NewState == EStructuralState::Destroyed && DestroyDelay > 0.f)
 		{
 			if (AActor* Owner = GetOwner())
@@ -163,6 +167,8 @@ void UDamagableComponent::UpdateStructuralState()
 				Owner->SetLifeSpan(DestroyDelay);
 			}
 		}
+
+		OnStructuralStateChanged.Broadcast(StructuralState);
 	}
 
 #if WITH_EDITOR
