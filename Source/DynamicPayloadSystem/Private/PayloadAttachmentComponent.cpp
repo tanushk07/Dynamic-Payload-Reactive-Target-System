@@ -52,6 +52,20 @@ void UPayloadAttachmentComponent::BeginPlay()
 	}
 }
 
+void UPayloadAttachmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// Only clean up a charge still riding on this carrier. One that was
+	// released has already been handed over to the world.
+	if (AttachedPayload)
+	{
+		AttachedPayload->Destroy();
+		AttachedPayload = nullptr;
+		CachedPayloadMass = 0.0f;
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void UPayloadAttachmentComponent::SpawnAndAttachPayload()
 {
 	if (AttachedPayload || !PayloadClass)

@@ -110,6 +110,18 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** Takes a still-attached payload down with the carrier.
+	 *
+	 *  A payload is attached to the drone, not owned by it, so destroying the
+	 *  drone used to leave the charge floating in the world. Anything that
+	 *  replaces the pawn - a mission retry, or returning to the menu and
+	 *  pressing Play again - leaked one payload actor per cycle.
+	 *
+	 *  A DROPPED payload is deliberately left alone: DetachPayload clears
+	 *  AttachedPayload, so a charge already in flight still lands and explodes
+	 *  even if the drone that released it is gone. */
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	UFUNCTION()
 	void OnKamikazeOverlap(
 		UPrimitiveComponent* OverlappedComp,
