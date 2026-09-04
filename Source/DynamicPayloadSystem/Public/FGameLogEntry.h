@@ -10,16 +10,16 @@ struct FGameLogEntry
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(BlueprintReadWrite, Category = "Mission|Log")
 	ELogType LogType = ELogType::Explosion;
 
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(BlueprintReadWrite, Category = "Mission|Log")
 	ELogSeverity Severity = ELogSeverity::Critical;
 
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(BlueprintReadWrite, Category = "Mission|Log")
 	FText Message = FText::GetEmpty();
 
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(BlueprintReadWrite, Category = "Mission|Log")
 	float TimeStamp = 0.0f;
 
 	FGameLogEntry() = default;

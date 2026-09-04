@@ -38,7 +38,10 @@ void AExplosive::BeginPlay()
 	}
 
 #if WITH_EDITOR
-	DrawExplosionDebug();
+	if (bShowDebug)
+	{
+		DrawExplosionDebug();
+	}
 #endif
 	Explode();
 }
@@ -55,7 +58,10 @@ void AExplosive::Explode()
 
 	const FVector ExplosionLocation = GetActorLocation();
 #if WITH_EDITOR
-	UE_LOG(LogDynamicPayload, Warning, TEXT("=== EXPLOSION TRIGGERED at %s ==="), *ExplosionLocation.ToString());
+	if (bShowDebug)
+	{
+		UE_LOG(LogDynamicPayload, Warning, TEXT("=== EXPLOSION TRIGGERED at %s ==="), *ExplosionLocation.ToString());
+	}
 #endif
 
 	TArray<FOverlapResult> Overlaps = ScanForTargets();
@@ -274,6 +280,8 @@ bool AExplosive::HasLineOfSight(const FVector& TargetPoint, const AActor* Ignore
 void AExplosive::DrawExplosionDebug() const
 {
 #if WITH_EDITOR
+	if (!bShowDebug) return;
+
 	UWorld* World = GetWorld();
 	if (!World) return;
 

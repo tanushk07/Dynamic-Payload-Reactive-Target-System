@@ -114,7 +114,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Mission")
 	FOnMissionResolved OnMissionResolved;
 
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category = "Mission")
 	void NotifyAttemptConsumed();
 
 	/** Register a target that came into existence after StartMission ran.
@@ -213,4 +213,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training")
 	float ConfiguredFuseTime = 3.0f;
+
+	/** Toggle debug logging for mission manager diagnostics (editor only). */
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bShowDebug = false;
 };

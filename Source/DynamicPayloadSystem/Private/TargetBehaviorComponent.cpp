@@ -1,5 +1,6 @@
 #include "TargetBehaviorComponent.h"
 #include "DamagableComponent.h"
+#include "GameFramework/Actor.h"
 #include "DynamicPayloadSystemModule.h"
 
 UTargetBehaviorComponent::UTargetBehaviorComponent()
@@ -45,12 +46,15 @@ void UTargetBehaviorComponent::HandleStructuralStateChanged(
 	}
 
 #if WITH_EDITOR
-	UE_LOG(LogDynamicPayload, Display,
-		TEXT("[%s] Behavior updated -> SpeedMultiplier: %.2f, CanMove: %s"),
-		*GetOwner()->GetName(),
-		SpeedMultiplier,
-		bCanMove ? TEXT("true") : TEXT("false")
-	);
+	if (bShowDebug)
+	{
+		UE_LOG(LogDynamicPayload, Display,
+			TEXT("[%s] Behavior updated -> SpeedMultiplier: %.2f, CanMove: %s"),
+			*GetOwner()->GetName(),
+			SpeedMultiplier,
+			bCanMove ? TEXT("true") : TEXT("false")
+		);
+	}
 #endif
 	OnMovementCapabilityChanged.Broadcast(SpeedMultiplier, bCanMove);
 }

@@ -1,4 +1,5 @@
 #include "DamagableComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "DynamicPayloadSystemModule.h"
 #include "GameFramework/Actor.h"
 
@@ -17,9 +18,12 @@ void UDamagableComponent::BeginPlay()
 	if (MaxHealth <= 0.f)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogDynamicPayload, Warning,
-			TEXT("[Damagable] %s: MaxHealth was %.2f; clamped to 1.0 to avoid softlock"),
-			*GetOwner()->GetName(), MaxHealth);
+		if (bShowDebug)
+		{
+			UE_LOG(LogDynamicPayload, Warning,
+				TEXT("[Damagable] %s: MaxHealth was %.2f; clamped to 1.0 to avoid softlock"),
+				*GetOwner()->GetName(), MaxHealth);
+		}
 #endif
 		MaxHealth = 1.f;
 	}
@@ -92,9 +96,12 @@ void UDamagableComponent::UpdateStructuralState()
 	if (MaxHealth <= 0.f)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogDynamicPayload, Warning,
-			TEXT("[Damagable] %s: MaxHealth was set to <= 0 at runtime; clamped to 1.0"),
-			GetOwner() ? *GetOwner()->GetName() : TEXT("(no owner)"));
+		if (bShowDebug)
+		{
+			UE_LOG(LogDynamicPayload, Warning,
+				TEXT("[Damagable] %s: MaxHealth was set to <= 0 at runtime; clamped to 1.0"),
+				GetOwner() ? *GetOwner()->GetName() : TEXT("(no owner)"));
+		}
 #endif
 		MaxHealth = 1.f;
 	}
@@ -135,14 +142,19 @@ void UDamagableComponent::UpdateStructuralState()
 	}
 
 #if WITH_EDITOR
-	AActor* Owner = GetOwner();
-	if (!Owner) return;
-	UE_LOG(LogDynamicPayload, Display,
-		TEXT("[%s] StructuralState -> %s (Health: %.1f / %.1f)"),
-		*Owner->GetName(),
-		*UEnum::GetValueAsString(StructuralState),
-		CurrentHealth,
-		MaxHealth
-	);
+	if (bShowDebug)
+	{
+		AActor* Owner = GetOwner();
+		if (Owner)
+		{
+			UE_LOG(LogDynamicPayload, Display,
+				TEXT("[%s] StructuralState -> %s (Health: %.1f / %.1f)"),
+				*Owner->GetName(),
+				*UEnum::GetValueAsString(StructuralState),
+				CurrentHealth,
+				MaxHealth
+			);
+		}
+	}
 #endif
 }

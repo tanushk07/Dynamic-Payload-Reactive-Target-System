@@ -39,3 +39,6 @@ Thumbs.db
 
 # FAB packaging output (we keep _Packaged out of the repo)
 _Packaged/
+
+# Local build log
+_buildlog.txt

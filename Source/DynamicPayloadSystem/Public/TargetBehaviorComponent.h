@@ -20,10 +20,10 @@ protected:
 	void HandleStructuralStateChanged(EStructuralState NewState);
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Behavior")
 	float SpeedMultiplier = 1.0f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Behavior")
 	bool bCanMove = true;
 
 	DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -34,4 +34,8 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FOnMovementCapabilityChanged OnMovementCapabilityChanged;
+
+	/** Toggle debug logging for behavior state changes (editor only). */
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bShowDebug = false;
 };

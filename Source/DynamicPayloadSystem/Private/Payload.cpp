@@ -7,6 +7,7 @@
 #include "DamagableComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 
 APayload::APayload()
 {
@@ -80,7 +81,10 @@ void APayload::Arm()
 	bIsArmed = true;
 
 #if WITH_EDITOR
-	UE_LOG(LogDynamicPayload, Warning, TEXT("Payload armed"));
+	if (bShowDebug)
+	{
+		UE_LOG(LogDynamicPayload, Warning, TEXT("Payload armed"));
+	}
 #endif
 
 	if (bExplodeOnHit)
@@ -112,7 +116,10 @@ void APayload::OnFuseExpired()
 		return;
 
 #if WITH_EDITOR
-	UE_LOG(LogDynamicPayload, Warning, TEXT("Payload fuse expired"));
+	if (bShowDebug)
+	{
+		UE_LOG(LogDynamicPayload, Warning, TEXT("Payload fuse expired"));
+	}
 #endif
 
 	Explode(GetActorLocation());
@@ -136,7 +143,10 @@ void APayload::OnPayloadHit(
 	if (!DamageComp) return;
 
 #if WITH_EDITOR
-	UE_LOG(LogDynamicPayload, Warning, TEXT("Payload impact detected"));
+	if (bShowDebug)
+	{
+		UE_LOG(LogDynamicPayload, Warning, TEXT("Payload impact detected"));
+	}
 #endif
 
 	Explode(Hit.ImpactPoint);

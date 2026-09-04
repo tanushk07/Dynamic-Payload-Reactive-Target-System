@@ -2,6 +2,7 @@
 #include "DamagableComponent.h"
 #include "DynamicPayloadSystemModule.h"
 #include "PayloadAttachmentComponent.h"
+#include "TimerManager.h"
 #include "EngineUtils.h"
 #include "Payload.h"
 #include "TargetActor.h"
@@ -56,7 +57,10 @@ void APayloadMissionManager::HandleMissionStart()
 	if (!bHasValidPayload)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogDynamicPayload, Error, TEXT("[Mission] Cannot start - No PayloadClass assigned in PayloadAttachmentComponent!"));
+		if (bShowDebug)
+		{
+			UE_LOG(LogDynamicPayload, Error, TEXT("[Mission] Cannot start - No PayloadClass assigned in PayloadAttachmentComponent!"));
+		}
 #endif
 		return;
 	}

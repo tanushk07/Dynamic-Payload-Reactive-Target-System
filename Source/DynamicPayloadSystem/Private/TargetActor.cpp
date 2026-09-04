@@ -1,5 +1,6 @@
 #include "TargetActor.h"
 #include "DamagableComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "TargetBehaviorComponent.h"
 #include "MovableTargetComponent.h"
 #include "PayloadMissionManager.h"

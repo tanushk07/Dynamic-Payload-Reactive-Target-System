@@ -2,6 +2,9 @@
 #include "TargetBehaviorComponent.h"
 #include "DynamicPayloadSystemModule.h"
 #include "PatrolAreaVolume.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "TargetActor.h"
 #include "Components/SplineComponent.h"
 #include "EngineUtils.h"
@@ -23,9 +26,12 @@ void UMovableTargetComponent::BeginPlay()
 		Owner->GetRootComponent()->Mobility != EComponentMobility::Movable)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogDynamicPayload, Warning,
-			TEXT("[Movement] %s has non-Movable root — disabling MovableTargetComponent"),
-			*Owner->GetName());
+		if (bShowDebug)
+		{
+			UE_LOG(LogDynamicPayload, Warning,
+				TEXT("[Movement] %s has non-Movable root — disabling MovableTargetComponent"),
+				*Owner->GetName());
+		}
 #endif
 		SetComponentTickEnabled(false);
 		return;
@@ -120,7 +126,7 @@ void UMovableTargetComponent::ArcSteerToward(float DeltaTime, const FVector& Tar
 	{
 		float SpeedFactor = FMath::Clamp(1.f - (AngleToTarget / 180.f), 0.3f, 1.f);
 		EffectiveSpeed = FMath::Max(Speed * SpeedFactor, MinPatrolSpeed);
-		TurningRadius = MinTurningRadius;
+		TurningRadius = GetTurningRadius();
 	}
 	else
 	{
@@ -138,7 +144,7 @@ void UMovableTargetComponent::ArcSteerToward(float DeltaTime, const FVector& Tar
 	FVector NewLocation;
 	float NewYaw;
 
-	if (Distance < ArrivalTolerance)
+	if (Distance < GetArrivalTolerance())
 	{
 		NewLocation = CurrentLocation + DesiredDirection * MoveDistance;
 		NewYaw = DesiredDirection.Rotation().Yaw;
@@ -185,7 +191,8 @@ void UMovableTargetComponent::InitializeSplineMovement()
 		DistanceAlongSpline, ESplineCoordinateSpace::World);
 	float DistToSpline = FVector::Dist2D(ActorLocation, SplinePoint);
 
-	bOnSpline = (DistToSpline < ArrivalTolerance);
+	bOnSpline = (DistToSpline < GetArrivalTolerance());
+	SplineBlendAlpha = bOnSpline ? 1.f : 0.f;
 }
 
 void UMovableTargetComponent::MoveAlongSpline(float DeltaTime)
@@ -198,13 +205,34 @@ void UMovableTargetComponent::MoveAlongSpline(float DeltaTime)
 
 	if (!bOnSpline)
 	{
-		FVector SplineTarget = PatrolSpline->GetLocationAtDistanceAlongSpline(
-			DistanceAlongSpline, ESplineCoordinateSpace::World);
-
-		ArcSteerToward(DeltaTime, SplineTarget, Speed);
-
 		FVector CurrentLoc = GetOwner()->GetActorLocation();
 		float NewInputKey = PatrolSpline->FindInputKeyClosestToWorldLocation(CurrentLoc);
+		DistanceAlongSpline = PatrolSpline->GetDistanceAlongSplineAtSplineInputKey(NewInputKey);
+
+		// Aim at a point AHEAD along the path, not the nearest point. The
+		// nearest point sits perpendicular to the vehicle, and anything with a
+		// finite turning radius can never drive onto it - it just weaves.
+		float AimDistance = DistanceAlongSpline + GetLookaheadDistance();
+		if (PatrolSpline->IsClosedLoop() && SplineLength > KINDA_SMALL_NUMBER)
+		{
+			AimDistance = FMath::Fmod(AimDistance, SplineLength);
+		}
+		else
+		{
+			AimDistance = FMath::Min(AimDistance, SplineLength);
+		}
+
+		FVector SplineTarget = PatrolSpline->GetLocationAtDistanceAlongSpline(
+			AimDistance, ESplineCoordinateSpace::World);
+
+		// Ramp up while closing on the path rather than launching at full speed.
+		const float JoinRate = (Speed > CurrentSpeed) ? GetAccelRate() : GetBrakeRate();
+		CurrentSpeed = FMath::FInterpConstantTo(CurrentSpeed, Speed, DeltaTime, JoinRate);
+
+		ArcSteerToward(DeltaTime, SplineTarget, FMath::Max(CurrentSpeed, MinPatrolSpeed));
+
+		CurrentLoc = GetOwner()->GetActorLocation();
+		NewInputKey = PatrolSpline->FindInputKeyClosestToWorldLocation(CurrentLoc);
 		DistanceAlongSpline = PatrolSpline->GetDistanceAlongSplineAtSplineInputKey(NewInputKey);
 
 		FVector SplinePoint = PatrolSpline->GetLocationAtDistanceAlongSpline(
@@ -212,9 +240,10 @@ void UMovableTargetComponent::MoveAlongSpline(float DeltaTime)
 
 		float DistToSpline = FVector::Dist2D(CurrentLoc, SplinePoint);
 
-		if (DistToSpline < ArrivalTolerance * 2.f)
+		if (DistToSpline < GetArrivalTolerance() * 2.f)
 		{
 			bOnSpline = true;
+			SplineBlendAlpha = 0.f;
 			FVector Tangent = PatrolSpline->GetDirectionAtDistanceAlongSpline(
 				DistanceAlongSpline, ESplineCoordinateSpace::World);
 			DesiredMovementYaw = Tangent.Rotation().Yaw;
@@ -222,7 +251,21 @@ void UMovableTargetComponent::MoveAlongSpline(float DeltaTime)
 		return;
 	}
 
-	DistanceAlongSpline += Speed * DeltaTime;
+	// On an OPEN path the end of the spline is a destination, not a wrap point.
+	// Limit speed by what can still be braked to a halt in the distance that
+	// remains, so the vehicle rolls to a stop at B instead of running into it
+	// and clamping dead. This is the behaviour the A-to-B demo is showing off.
+	float DesiredCruise = Speed;
+	if (!PatrolSpline->IsClosedLoop())
+	{
+		const float Remaining = FMath::Max(SplineLength - DistanceAlongSpline, 0.f);
+		DesiredCruise = FMath::Min(Speed, GetApproachSpeedLimit(Remaining));
+	}
+
+	const float CruiseRate = (DesiredCruise > CurrentSpeed) ? GetAccelRate() : GetBrakeRate();
+	CurrentSpeed = FMath::FInterpConstantTo(CurrentSpeed, DesiredCruise, DeltaTime, CruiseRate);
+
+	DistanceAlongSpline += CurrentSpeed * DeltaTime;
 
 	// For closed-loop splines (the natural "patrol" case), wrap to the start
 	// instead of stopping at the end. Open splines keep the original clamp
@@ -239,6 +282,14 @@ void UMovableTargetComponent::MoveAlongSpline(float DeltaTime)
 	FVector TargetLocation = PatrolSpline->GetLocationAtDistanceAlongSpline(
 		DistanceAlongSpline, ESplineCoordinateSpace::World
 	);
+
+	// Ease onto the path over ~0.3s so capture is not a visible teleport.
+	if (SplineBlendAlpha < 1.f)
+	{
+		SplineBlendAlpha = FMath::Clamp(SplineBlendAlpha + DeltaTime / 0.3f, 0.f, 1.f);
+		TargetLocation = FMath::Lerp(GetOwner()->GetActorLocation(), TargetLocation, SplineBlendAlpha);
+	}
+
 	GetOwner()->SetActorLocation(TargetLocation);
 
 	FVector Tangent = PatrolSpline->GetDirectionAtDistanceAlongSpline(
@@ -268,9 +319,9 @@ void UMovableTargetComponent::MoveInPatrolArea(float DeltaTime)
 		Forward2D.Normalize();
 		FVector VehicleLoc = Owner->GetActorLocation();
 
-		float EffectiveMinDist = (MinWaypointDistance > 0.f)
-			? MinWaypointDistance
-			: MinTurningRadius * 2.f;
+		float EffectiveMinDist = (GetMinWaypointDistance() > 0.f)
+			? GetMinWaypointDistance()
+			: GetTurningRadius() * 2.f;
 
 		bool bFoundGoodPoint = false;
 		for (int32 i = 0; i < 10; ++i)
@@ -312,7 +363,10 @@ void UMovableTargetComponent::MoveInPatrolArea(float DeltaTime)
 
 	case EPatrolAreaState::Moving:
 #if WITH_EDITOR
-		DrawDebugSphere(GetWorld(), CurrentDestination, 60.f, 12, FColor::Magenta, false, 0.f);
+		if (bShowDebug)
+		{
+			DrawDebugSphere(GetWorld(), CurrentDestination, 60.f, 12, FColor::Magenta, false, 0.f);
+		}
 #endif
 		UpdatePatrolMovement(DeltaTime, Speed);
 		break;
@@ -332,10 +386,11 @@ void UMovableTargetComponent::UpdatePatrolMovement(float DeltaTime, float Speed)
 	FVector CurrentLocation = GetOwner()->GetActorLocation();
 	float Distance = FVector::Dist2D(CurrentLocation, CurrentDestination);
 
-	if (Distance <= ArrivalTolerance)
+	if (Distance <= GetArrivalTolerance())
 	{
 		PatrolState = EPatrolAreaState::Waiting;
 		WaitTimeRemaining = WaitTimeAtPoint;
+		CurrentSpeed = 0.f;          // pull away from rest next time
 		return;
 	}
 
@@ -352,7 +407,13 @@ void UMovableTargetComponent::UpdatePatrolMovement(float DeltaTime, float Speed)
 		LastDistanceToTarget = Distance;
 	}
 
-	ArcSteerToward(DeltaTime, CurrentDestination, Speed);
+	// Ease into the waypoint instead of driving flat out and stopping dead.
+	const float ApproachLimit = GetApproachSpeedLimit(Distance - GetArrivalTolerance());
+	const float DesiredSpeed = FMath::Min(Speed, ApproachLimit);
+	const float Rate = (DesiredSpeed > CurrentSpeed) ? GetAccelRate() : GetBrakeRate();
+	CurrentSpeed = FMath::FInterpConstantTo(CurrentSpeed, DesiredSpeed, DeltaTime, Rate);
+
+	ArcSteerToward(DeltaTime, CurrentDestination, CurrentSpeed);
 }
 
 float UMovableTargetComponent::CalculateTurnAngle(const FVector& CurrentDir, const FVector& TargetDir) const
@@ -376,12 +437,65 @@ void UMovableTargetComponent::MoveInConvoy(float DeltaTime)
 
 	if (!FindRootSpline(RootSpline, RootSplineDistance))
 		return;
-
 	float CumulativeDistance = CalculateCumulativeFollowDistance();
-	float DesiredDistance = RootSplineDistance - CumulativeDistance;
 
 	float SplineLength = RootSpline->GetSplineLength();
-	DesiredDistance = FMath::Clamp(DesiredDistance, 0.f, SplineLength);
+
+	// A convoy cannot hold a gap longer than the route it is driving. Without
+	// this, a short loop wraps every follower back onto the leader's own
+	// position - they end up occupying the same point and grinding together.
+	// Packing tighter is the graceful failure; stacking is not.
+	if (SplineLength > KINDA_SMALL_NUMBER)
+	{
+		CumulativeDistance = FMath::Min(CumulativeDistance, SplineLength * 0.8f);
+	}
+
+	float DesiredDistance = RootSplineDistance - CumulativeDistance;
+	const bool bLoop = RootSpline->IsClosedLoop() && SplineLength > KINDA_SMALL_NUMBER;
+
+	// On a closed loop the follower must wrap around the seam. Clamping to 0
+	// (the old behaviour) commanded it to the spline START every lap, which
+	// collapsed the gap and slammed the controller once per revolution.
+	if (bLoop)
+	{
+		DesiredDistance = FMath::Fmod(DesiredDistance, SplineLength);
+		if (DesiredDistance < 0.f)
+		{
+			DesiredDistance += SplineLength;
+		}
+	}
+	else
+	{
+		DesiredDistance = FMath::Clamp(DesiredDistance, 0.f, SplineLength);
+	}
+
+	// Leader spline-speed feedforward. Derived from change in RootSplineDistance
+	// per tick so the follower matches the leader's actual velocity along the
+	// path (including 0 when the leader stops). Without this the controller
+	// implicitly assumes the leader is always moving at BaseSpeed and overshoots
+	// whenever the leader is slower or stopped.
+	float LeaderSplineSpeed = 0.f;
+	if (bConvoyInitialized)
+	{
+		float Delta = RootSplineDistance - PrevRootSplineDistance;
+
+		// Unwrap the seam crossing, otherwise Delta is a full -SplineLength
+		// spike for one frame and the follower brakes hard every lap.
+		if (bLoop)
+		{
+			if (Delta > SplineLength * 0.5f)
+			{
+				Delta -= SplineLength;
+			}
+			else if (Delta < -SplineLength * 0.5f)
+			{
+				Delta += SplineLength;
+			}
+		}
+
+		LeaderSplineSpeed = Delta / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER);
+	}
+	PrevRootSplineDistance = RootSplineDistance;
 
 	if (!bConvoyInitialized)
 	{
@@ -389,7 +503,7 @@ void UMovableTargetComponent::MoveInConvoy(float DeltaTime)
 		return;
 	}
 
-	UpdateConvoyMovement(DeltaTime, RootSpline, DesiredDistance, SplineLength);
+	UpdateConvoyMovement(DeltaTime, RootSpline, DesiredDistance, SplineLength, LeaderSplineSpeed);
 }
 
 bool UMovableTargetComponent::FindRootSpline(USplineComponent*& OutSpline, float& OutDistance)
@@ -405,9 +519,12 @@ bool UMovableTargetComponent::FindRootSpline(USplineComponent*& OutSpline, float
 		if (Visited.Contains(Current))
 		{
 #if WITH_EDITOR
-			UE_LOG(LogDynamicPayload, Error,
-				TEXT("[Convoy] Circular ConvoyLeader chain detected on %s"),
-				*GetOwner()->GetName());
+			if (bShowDebug)
+			{
+				UE_LOG(LogDynamicPayload, Error,
+					TEXT("[Convoy] Circular ConvoyLeader chain detected on %s"),
+					*GetOwner()->GetName());
+			}
 #endif
 			return false;
 		}
@@ -450,7 +567,7 @@ float UMovableTargetComponent::CalculateCumulativeFollowDistance() const
 		}
 		Visited.Add(Current);
 
-		Total += Current->FollowDistance;
+		Total += Current->GetFollowDistance();
 
 		if (Current->ConvoyLeader)
 		{
@@ -480,20 +597,22 @@ void UMovableTargetComponent::InitializeConvoyPosition(USplineComponent* Spline,
 		DesiredDistance, ESplineCoordinateSpace::World);
 	float DistToSpline = FVector::Dist2D(CurrentLocation, SplinePoint);
 
-	bConvoyOnSpline = (DistToSpline < ArrivalTolerance);
+	bConvoyOnSpline = (DistToSpline < GetArrivalTolerance());
+	ConvoyBlendAlpha = bConvoyOnSpline ? 1.f : 0.f;
 	bConvoyInitialized = true;
 }
 
 void UMovableTargetComponent::UpdateConvoyMovement(float DeltaTime, USplineComponent* Spline,
-	float DesiredDistance, float SplineLength)
+	float DesiredDistance, float SplineLength, float LeaderSplineSpeed)
 {
 	const float Speed = BaseSpeed * SpeedMultiplier;
 
 	float ForwardClearance = GetForwardClearance();
 	float CollisionBrake = 1.f;
-	if (ForwardClearance < MinConvoyFollowDistance)
+	const float MinFollow = GetMinConvoyFollowDistance();
+	if (ForwardClearance < MinFollow)
 	{
-		CollisionBrake = FMath::Clamp(ForwardClearance / MinConvoyFollowDistance, 0.f, 1.f);
+		CollisionBrake = FMath::Clamp(ForwardClearance / FMath::Max(MinFollow, 1.f), 0.f, 1.f);
 	}
 
 	if (!bConvoyOnSpline)
@@ -502,16 +621,16 @@ void UMovableTargetComponent::UpdateConvoyMovement(float DeltaTime, USplineCompo
 		FVector CurrentLoc = GetOwner()->GetActorLocation();
 		float DistToLeader = FVector::Dist2D(CurrentLoc, LeaderPos);
 
-		float DistError = DistToLeader - FollowDistance;
+		float DistError = DistToLeader - GetFollowDistance();
 		float ApproachSpeed = FMath::Clamp(
-			Speed + DistError * ConvoyFollowStiffness,
+			LeaderSplineSpeed + DistError * ConvoyFollowStiffness,
 			0.f,
 			Speed * ConvoyMaxSpeedMultiplier
 		);
 
 		if (ApproachSpeed > 1.f)
 		{
-			ArcSteerToward(DeltaTime, LeaderPos, ApproachSpeed, false);
+			ArcSteerToward(DeltaTime, LeaderPos, ApproachSpeed * CollisionBrake, false);
 		}
 		else
 		{
@@ -529,9 +648,10 @@ void UMovableTargetComponent::UpdateConvoyMovement(float DeltaTime, USplineCompo
 
 		float DistToSpline = FVector::Dist2D(GetOwner()->GetActorLocation(), NearestSplinePoint);
 
-		if (DistToSpline < ArrivalTolerance * 2.f && DesiredDistance > ArrivalTolerance)
+		if (DistToSpline < GetArrivalTolerance() * 2.f && DesiredDistance > GetArrivalTolerance())
 		{
 			bConvoyOnSpline = true;
+			ConvoyBlendAlpha = 0.f;
 			ConvoyDistanceAlongSpline = NearestDist;
 			FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(
 				NearestDist, ESplineCoordinateSpace::World);
@@ -540,19 +660,96 @@ void UMovableTargetComponent::UpdateConvoyMovement(float DeltaTime, USplineCompo
 		return;
 	}
 
-	float DistanceGap = DesiredDistance - ConvoyDistanceAlongSpline;
-	float ClampedGap = FMath::Clamp(DistanceGap, -FollowDistance, FollowDistance);
+	const bool bLoopPath = Spline->IsClosedLoop() && SplineLength > KINDA_SMALL_NUMBER;
 
-	float SpeedAdjustment = ClampedGap * ConvoyFollowStiffness;
-	float MinSpeed = (DistanceGap >= 0.f) ? Speed * 0.3f : 0.f;
-	float TargetSpeed = FMath::Clamp(
-		Speed + SpeedAdjustment,
-		MinSpeed,
-		Speed * ConvoyMaxSpeedMultiplier
+	float DistanceGap = DesiredDistance - ConvoyDistanceAlongSpline;
+
+	// Take the shortest way round the loop rather than the long way back.
+	if (bLoopPath)
+	{
+		if (DistanceGap > SplineLength * 0.5f)
+		{
+			DistanceGap -= SplineLength;
+		}
+		else if (DistanceGap < -SplineLength * 0.5f)
+		{
+			DistanceGap += SplineLength;
+		}
+	}
+
+	const float FollowDist = GetFollowDistance();
+	float ClampedGap = FMath::Clamp(DistanceGap, -FollowDist, FollowDist);
+
+	// Derivative term on the gap error. Proportional-only control against a
+	// saturating speed clamp produces a limit cycle - the follower swings
+	// either side of its target gap forever instead of settling.
+	float GapRate = 0.f;
+	if (bGapErrorInitialized)
+	{
+		GapRate = (ClampedGap - PrevGapError) / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER);
+	}
+	PrevGapError = ClampedGap;
+	bGapErrorInitialized = true;
+
+	// Velocity feedforward + P-controller on position error. At gap=0 with a
+	// stopped leader, TargetSpeed=0 — the controller itself decides to stop,
+	// instead of relying on the spline clamp to absorb a Speed-magnitude
+	// command every tick.
+	const float MaxSpeed = Speed * ConvoyMaxSpeedMultiplier;
+
+	// Cap the gain to the authority we actually have. A proportional term big
+	// enough to exceed the speed ceiling turns the loop into a bang-bang
+	// oscillator; sized this way the correction can never saturate.
+	const float Headroom = FMath::Max(MaxSpeed - FMath::Abs(LeaderSplineSpeed), 1.f);
+	const float EffectiveKp = FMath::Min(ConvoyFollowStiffness,
+		Headroom / FMath::Max(FollowDist, 1.f));
+
+	// Close the gap no faster than can be braked out of. Far back it presses
+	// on, near the mark it eases in, and it never over-runs - which is what
+	// reads as a driver judging a distance rather than a servo chasing a number.
+	const float ApproachCap = GetApproachSpeedLimit(FMath::Abs(ClampedGap));
+	float Correction = FMath::Sign(ClampedGap)
+		* FMath::Min(FMath::Abs(ClampedGap) * EffectiveKp, ApproachCap);
+
+	// Residual damping to settle the last of the jitter.
+	Correction += GapRate * ConvoyDamping;
+
+	// Guard the lower bound: if the leader is reversing, LeaderSplineSpeed is
+	// negative and a naive -(Leader + Recovery) would flip above Headroom,
+	// giving FMath::Clamp a min greater than its max.
+	const float DownAuthority = FMath::Max(LeaderSplineSpeed + ConvoyRecoverySpeed, 1.f);
+	Correction = FMath::Clamp(Correction, -DownAuthority, Headroom);
+
+	// Lower bound is negative so a follower that has closed up too far can
+	// ease back, instead of clamping at zero and waiting for the leader.
+	const float DesiredSpeed = FMath::Clamp(
+		LeaderSplineSpeed + Correction,
+		-ConvoyRecoverySpeed,
+		MaxSpeed
 	);
 
-	ConvoyDistanceAlongSpline += TargetSpeed * DeltaTime;
-	ConvoyDistanceAlongSpline = FMath::Clamp(ConvoyDistanceAlongSpline, 0.f, SplineLength);
+	const float ConvoyRate = (DesiredSpeed > CurrentSpeed) ? GetAccelRate() : GetBrakeRate();
+	CurrentSpeed = FMath::FInterpConstantTo(CurrentSpeed, DesiredSpeed, DeltaTime, ConvoyRate);
+
+	const float TargetSpeed = CurrentSpeed;
+
+	// Apply the forward-clearance brake (was computed every frame above but
+	// previously unused — defends against running into anything in front
+	// that isn't reflected in the spline math, e.g. a stopped non-leader).
+	ConvoyDistanceAlongSpline += TargetSpeed * CollisionBrake * DeltaTime;
+
+	if (bLoopPath)
+	{
+		ConvoyDistanceAlongSpline = FMath::Fmod(ConvoyDistanceAlongSpline, SplineLength);
+		if (ConvoyDistanceAlongSpline < 0.f)
+		{
+			ConvoyDistanceAlongSpline += SplineLength;
+		}
+	}
+	else
+	{
+		ConvoyDistanceAlongSpline = FMath::Clamp(ConvoyDistanceAlongSpline, 0.f, SplineLength);
+	}
 
 	FVector SplineLocation = Spline->GetLocationAtDistanceAlongSpline(
 		ConvoyDistanceAlongSpline, ESplineCoordinateSpace::World
@@ -561,11 +758,20 @@ void UMovableTargetComponent::UpdateConvoyMovement(float DeltaTime, USplineCompo
 		ConvoyDistanceAlongSpline, ESplineCoordinateSpace::World
 	);
 
+	if (ConvoyBlendAlpha < 1.f)
+	{
+		ConvoyBlendAlpha = FMath::Clamp(ConvoyBlendAlpha + DeltaTime / 0.3f, 0.f, 1.f);
+		SplineLocation = FMath::Lerp(GetOwner()->GetActorLocation(), SplineLocation, ConvoyBlendAlpha);
+	}
+
 	GetOwner()->SetActorLocation(SplineLocation);
 	DesiredMovementYaw = Tangent.Rotation().Yaw;
 
 #if WITH_EDITOR
-	DrawConvoyDebug(Spline, DesiredDistance, GetOwner()->GetActorLocation(), Tangent, DistanceGap);
+	if (bShowDebug)
+	{
+		DrawConvoyDebug(Spline, DesiredDistance, GetOwner()->GetActorLocation(), Tangent, DistanceGap);
+	}
 #endif
 }
 
@@ -575,7 +781,7 @@ float UMovableTargetComponent::GetForwardClearance()
 	UWorld* World = GetWorld();
 	if (!OwnerActor || !World)
 	{
-		return ConvoyForwardTraceRange;
+		return GetConvoyForwardTraceRange();
 	}
 
 	FVector Start = OwnerActor->GetActorLocation() + FVector(0, 0, 100.f);
@@ -584,7 +790,7 @@ float UMovableTargetComponent::GetForwardClearance()
 	Forward.Z = 0.f;
 	Forward.Normalize();
 
-	FVector End = Start + Forward * ConvoyForwardTraceRange;
+	FVector End = Start + Forward * GetConvoyForwardTraceRange();
 
 	FHitResult Hit;
 	FCollisionQueryParams Params;
@@ -618,12 +824,15 @@ float UMovableTargetComponent::GetForwardClearance()
 	if (World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
 	{
 #if WITH_EDITOR
-		DrawDebugLine(World, Start, Hit.ImpactPoint, FColor::Orange, false, 0.f, 0, 3.f);
+		if (bShowDebug)
+		{
+			DrawDebugLine(World, Start, Hit.ImpactPoint, FColor::Orange, false, 0.f, 0, 3.f);
+		}
 #endif
 		return Hit.Distance;
 	}
 
-	return ConvoyForwardTraceRange;
+	return GetConvoyForwardTraceRange();
 }
 
 void UMovableTargetComponent::DrawConvoyDebug(USplineComponent* Spline, float DesiredDistance,
@@ -649,6 +858,89 @@ void UMovableTargetComponent::DrawConvoyDebug(USplineComponent* Spline, float De
    GROUND ALIGNMENT
    ============================================================================ */
 
+void UMovableTargetComponent::RefreshDerivedGeometry()
+{
+	ResolvedVehicleLength    = FMath::Max(CachedLongitudinalExtent * 2.f, 100.f);
+	ResolvedFollowDistance   = ResolvedVehicleLength * FollowGapInLengths;
+	ResolvedTurningRadius    = ResolvedVehicleLength * TurningRadiusInLengths;
+	ResolvedArrivalTolerance = ResolvedVehicleLength * ArrivalToleranceInLengths;
+	ResolvedAxleOffset       = ResolvedVehicleLength * AxleOffsetInLengths;
+}
+
+/* Each accessor falls back to the hand-authored absolute value when the
+ * override is set, or when geometry has not been resolved yet (component
+ * queried before BeginPlay). */
+
+float UMovableTargetComponent::GetFollowDistance() const
+{
+	if (bUseAbsoluteGeometry || ResolvedFollowDistance <= KINDA_SMALL_NUMBER)
+		return FollowDistance;
+	return ResolvedFollowDistance;
+}
+
+float UMovableTargetComponent::GetTurningRadius() const
+{
+	if (bUseAbsoluteGeometry || ResolvedTurningRadius <= KINDA_SMALL_NUMBER)
+		return MinTurningRadius;
+	return ResolvedTurningRadius;
+}
+
+float UMovableTargetComponent::GetArrivalTolerance() const
+{
+	if (bUseAbsoluteGeometry || ResolvedArrivalTolerance <= KINDA_SMALL_NUMBER)
+		return ArrivalTolerance;
+	return ResolvedArrivalTolerance;
+}
+
+float UMovableTargetComponent::GetMinWaypointDistance() const
+{
+	if (bUseAbsoluteGeometry || ResolvedVehicleLength <= KINDA_SMALL_NUMBER)
+		return MinWaypointDistance;
+	return ResolvedVehicleLength * MinWaypointInLengths;
+}
+
+float UMovableTargetComponent::GetAxleOffset() const
+{
+	if (bUseAbsoluteGeometry || ResolvedAxleOffset <= KINDA_SMALL_NUMBER)
+		return FMath::Max(FrontTraceOffset, RearTraceOffset);
+	return ResolvedAxleOffset;
+}
+
+float UMovableTargetComponent::GetMinConvoyFollowDistance() const
+{
+	if (bUseAbsoluteGeometry)
+		return MinConvoyFollowDistance;
+	return GetFollowDistance() * 0.6f;
+}
+
+float UMovableTargetComponent::GetConvoyForwardTraceRange() const
+{
+	if (bUseAbsoluteGeometry)
+		return ConvoyForwardTraceRange;
+	return GetFollowDistance() * 1.6f;
+}
+
+float UMovableTargetComponent::GetAccelRate() const
+{
+	const float Target = FMath::Max(BaseSpeed * SpeedMultiplier, 1.f);
+	return Target / FMath::Max(SpeedRampTime, 0.05f);
+}
+
+float UMovableTargetComponent::GetBrakeRate() const
+{
+	return GetAccelRate() * FMath::Max(BrakeRampMultiplier, 1.f);
+}
+
+float UMovableTargetComponent::GetLookaheadDistance() const
+{
+	return FMath::Max(GetVehicleLength(), CurrentSpeed * LookaheadSeconds);
+}
+
+float UMovableTargetComponent::GetApproachSpeedLimit(float Distance) const
+{
+	return FMath::Sqrt(2.f * GetBrakeRate() * FMath::Max(Distance, 0.f));
+}
+
 void UMovableTargetComponent::CacheOwnerBounds()
 {
 	AActor* OwnerActor = GetOwner();
@@ -667,6 +959,7 @@ void UMovableTargetComponent::CacheOwnerBounds()
 			CachedLongitudinalExtent = FMath::Max(FMath::Max(ScaledX, ScaledY), 50.f);
 			CachedLateralExtent = FMath::Max(FMath::Min(ScaledX, ScaledY), 30.f);
 
+			RefreshDerivedGeometry();
 			return;
 		}
 	}
@@ -675,6 +968,8 @@ void UMovableTargetComponent::CacheOwnerBounds()
 	FVector Extents = ActorBounds.GetExtent();
 	CachedLongitudinalExtent = FMath::Max(FMath::Max(Extents.X, Extents.Y), 50.f);
 	CachedLateralExtent = FMath::Max(FMath::Min(Extents.X, Extents.Y), 30.f);
+
+	RefreshDerivedGeometry();
 }
 
 void UMovableTargetComponent::AlignToGround(float DeltaTime)
@@ -689,8 +984,9 @@ void UMovableTargetComponent::AlignToGround(float DeltaTime)
 
 	FHitResult FrontHit, RearHit, LeftHit, RightHit;
 
-	FVector FrontOffset = Forward * FrontTraceOffset;
-	FVector RearOffset = -Forward * RearTraceOffset;
+	const float AxleOffset = GetAxleOffset();
+	FVector FrontOffset = Forward * AxleOffset;
+	FVector RearOffset = -Forward * AxleOffset;
 	FVector LeftOffset = -Right * CachedLateralExtent;
 	FVector RightOffset = Right * CachedLateralExtent;
 
@@ -767,17 +1063,29 @@ bool UMovableTargetComponent::TraceGround(const FVector& Origin, const FVector& 
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(GetOwner());
 
-	bool bHit = GetWorld()->LineTraceSingleByChannel(
-		OutHit, TraceStart, TraceEnd, ECC_WorldStatic, Params
+	// Query by OBJECT TYPE, not by channel. A by-channel trace on
+	// ECC_WorldStatic still hits WorldDynamic bodies, because they block that
+	// channel - so every vehicle's ground probe was landing on its neighbour's
+	// roof and conforming to it. Each then lifted the other, frame after
+	// frame, and the convoy climbed into a pile. Restricting the query to
+	// WorldStatic objects means only real ground can answer it.
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+
+	bool bHit = GetWorld()->LineTraceSingleByObjectType(
+		OutHit, TraceStart, TraceEnd, ObjectParams, Params
 	);
 
 #if WITH_EDITOR
-	FColor TraceColor = bHit ? FColor::Green : FColor::Red;
-	DrawDebugLine(GetWorld(), TraceStart, bHit ? OutHit.ImpactPoint : TraceEnd,
-		TraceColor, false, 0.f, 0, 2.f);
-	if (bHit)
+	if (bShowDebug)
 	{
-		DrawDebugSphere(GetWorld(), OutHit.ImpactPoint, 10.f, 4, FColor::Yellow, false, 0.f);
+		FColor TraceColor = bHit ? FColor::Green : FColor::Red;
+		DrawDebugLine(GetWorld(), TraceStart, bHit ? OutHit.ImpactPoint : TraceEnd,
+			TraceColor, false, 0.f, 0, 2.f);
+		if (bHit)
+		{
+			DrawDebugSphere(GetWorld(), OutHit.ImpactPoint, 10.f, 4, FColor::Yellow, false, 0.f);
+		}
 	}
 #endif
 
@@ -789,7 +1097,7 @@ void UMovableTargetComponent::ApplyGroundAlignment(
 	const FHitResult& LeftHit, const FHitResult& RightHit, float DeltaTime)
 {
 	float PitchDelta = FrontHit.ImpactPoint.Z - RearHit.ImpactPoint.Z;
-	float PitchDistance = FrontTraceOffset + RearTraceOffset;
+	float PitchDistance = GetAxleOffset() * 2.f;
 	float Pitch = FMath::RadiansToDegrees(FMath::Atan2(PitchDelta, PitchDistance));
 
 	float RollDelta = LeftHit.ImpactPoint.Z - RightHit.ImpactPoint.Z;
@@ -859,8 +1167,11 @@ void UMovableTargetComponent::ValidateConvoySetup()
 	if (!ConvoyLeader)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogDynamicPayload, Error,
-			TEXT("[Convoy] %s: No ConvoyLeader assigned"), *OwnerActor->GetName());
+		if (bShowDebug)
+		{
+			UE_LOG(LogDynamicPayload, Error,
+				TEXT("[Convoy] %s: No ConvoyLeader assigned"), *OwnerActor->GetName());
+		}
 #endif
 		return;
 	}
@@ -868,8 +1179,11 @@ void UMovableTargetComponent::ValidateConvoySetup()
 	if (ConvoyLeader == OwnerActor)
 	{
 #if WITH_EDITOR
-		UE_LOG(LogDynamicPayload, Error,
-			TEXT("[Convoy] %s: Cannot follow itself"), *OwnerActor->GetName());
+		if (bShowDebug)
+		{
+			UE_LOG(LogDynamicPayload, Error,
+				TEXT("[Convoy] %s: Cannot follow itself"), *OwnerActor->GetName());
+		}
 #endif
 		ConvoyLeader = nullptr;
 		return;
