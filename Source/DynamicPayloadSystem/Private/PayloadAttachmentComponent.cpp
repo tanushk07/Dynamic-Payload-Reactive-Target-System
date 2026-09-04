@@ -355,6 +355,19 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	// state changes should learn that the kamikaze payload is gone too.
 	OnPayloadStateChanged.Broadcast(false);
 
+	// Deliberately AFTER Explode(): the blast has to land, and any target it
+	// destroys has to be struck off the mission's list, before the mission is
+	// told the drone is gone. Reversed, a kamikaze that cleared the final
+	// target would be recorded as a failure.
+	//
+	// Without this call the drone simply vanished: the mission stayed
+	// InProgress with no pawn and no carrier to respawn a payload onto, and
+	// nothing resolved until the clock ran out.
+	if (CachedMissionManager)
+	{
+		CachedMissionManager->NotifyDroneDestroyed();
+	}
+
 	GetOwner()->Destroy();
 }
 
