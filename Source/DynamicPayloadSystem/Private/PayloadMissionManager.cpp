@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/GameModeBase.h"
 #include "Components/PrimitiveComponent.h"
 #include "MovableTargetComponent.h"
 
@@ -721,9 +722,19 @@ void APayloadMissionManager::CaptureMissionSnapshot()
 	{
 		if (const APlayerController* PC = World->GetFirstPlayerController())
 		{
-			if (const APawn* Pawn = PC->GetPawn())
+			if (APawn* Pawn = PC->GetPawn())
 			{
 				PlayerRestartTransform = Pawn->GetActorTransform();
+				CapturedPlayerPawnClass = Pawn->GetClass();
+
+				// Remember what the configuration screen injected, so the
+				// replacement drone is armed the same way as the original.
+				if (const UPayloadAttachmentComponent* Attach =
+					Pawn->FindComponentByClass<UPayloadAttachmentComponent>())
+				{
+					CapturedPayloadClass = Attach->PayloadClass;
+					bCapturedKamikazeMode = Attach->bKamikazeMode;
+				}
 			}
 		}
 	}
@@ -738,10 +749,11 @@ void APayloadMissionManager::ResetPlayerToStart()
 		return;
 
 	APlayerController* PC = World->GetFirstPlayerController();
-	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
-	if (!Pawn)
+	if (!PC)
 		return;
 
+	// Where home is. A PlayerStart in the level wins; the transform captured at
+	// mission start is the fallback for levels without one.
 	FTransform Destination = PlayerRestartTransform;
 	for (TActorIterator<APlayerStart> It(World); It; ++It)
 	{
@@ -749,19 +761,95 @@ void APayloadMissionManager::ResetPlayerToStart()
 		break;
 	}
 
-	// Clear momentum BEFORE moving. Teleporting a simulating body without this
-	// carries its old velocity to the new position, so a drone that was diving
-	// at the ground resumes diving the instant it arrives home.
-	if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Pawn->GetRootComponent()))
+	APawn* OldPawn = PC->GetPawn();
+
+	// Which class to rebuild from. The captured class is authoritative because
+	// OldPawn may not exist at all.
+	TSubclassOf<APawn> PawnClass = CapturedPlayerPawnClass;
+	if (!PawnClass && OldPawn)
 	{
-		if (Prim->IsSimulatingPhysics())
+		PawnClass = OldPawn->GetClass();
+	}
+	if (!PawnClass)
+	{
+		if (const AGameModeBase* GameMode = World->GetAuthGameMode())
 		{
-			Prim->SetPhysicsLinearVelocity(FVector::ZeroVector);
-			Prim->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+			PawnClass = GameMode->DefaultPawnClass;
 		}
 	}
 
-	Pawn->TeleportTo(Destination.GetLocation(), Destination.Rotator(), false, true);
+	if (!PawnClass)
+	{
+		// Nothing to rebuild from. Move whatever is there and bail.
+		if (OldPawn)
+		{
+			if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(OldPawn->GetRootComponent()))
+			{
+				if (Prim->IsSimulatingPhysics())
+				{
+					Prim->SetPhysicsLinearVelocity(FVector::ZeroVector);
+					Prim->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+				}
+			}
+			OldPawn->TeleportTo(Destination.GetLocation(), Destination.Rotator(), false, true);
+		}
+		return;
+	}
+
+	// Carry the injected payload setup forward. Read it from the live pawn when
+	// there is one, otherwise fall back to what was captured at mission start.
+	TSubclassOf<APayload> PayloadClassToApply = CapturedPayloadClass;
+	bool bKamikazeToApply = bCapturedKamikazeMode;
+	if (OldPawn)
+	{
+		if (const UPayloadAttachmentComponent* OldAttach =
+			OldPawn->FindComponentByClass<UPayloadAttachmentComponent>())
+		{
+			if (OldAttach->PayloadClass)
+			{
+				PayloadClassToApply = OldAttach->PayloadClass;
+			}
+			bKamikazeToApply = OldAttach->bKamikazeMode;
+		}
+	}
+
+	// Rebuild rather than teleport. Teleporting only works when a pawn still
+	// exists, and a kamikaze destroys it outright - which left the player with
+	// no drone at all after a retry. A fresh pawn also guarantees no leftover
+	// velocity, attitude, or half-attached payload from the failed attempt.
+	if (OldPawn)
+	{
+		PC->UnPossess();
+		OldPawn->Destroy();
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.Owner = PC;
+
+	APawn* NewPawn = World->SpawnActor<APawn>(
+		PawnClass, Destination.GetLocation(), Destination.Rotator(), SpawnParams);
+
+	if (!NewPawn)
+	{
+		UE_LOG(LogDynamicPayload, Error,
+			TEXT("[Mission] Could not respawn the player pawn (%s); the player is left without one."),
+			*PawnClass->GetName());
+		return;
+	}
+
+	if (UPayloadAttachmentComponent* NewAttach =
+		NewPawn->FindComponentByClass<UPayloadAttachmentComponent>())
+	{
+		if (PayloadClassToApply)
+		{
+			NewAttach->PayloadClass = PayloadClassToApply;
+		}
+		NewAttach->bKamikazeMode = bKamikazeToApply;
+	}
+
+	PC->Possess(NewPawn);
 }
 
 void APayloadMissionManager::ResetMissionWorld()

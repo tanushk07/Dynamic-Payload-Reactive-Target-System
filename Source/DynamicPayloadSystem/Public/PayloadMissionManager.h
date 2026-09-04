@@ -112,6 +112,19 @@ protected:
 	UPROPERTY()
 	FTransform PlayerRestartTransform = FTransform::Identity;
 
+	/** Captured at mission start so the drone can be REBUILT, not just moved.
+	 *  A kamikaze destroys the pawn outright, so on retry there is nothing left
+	 *  to teleport - the class is the only way back. */
+	UPROPERTY()
+	TSubclassOf<APawn> CapturedPlayerPawnClass;
+
+	/** Payload setup carried over to the replacement drone, so a respawn does
+	 *  not silently discard what the configuration screen injected. */
+	UPROPERTY()
+	TSubclassOf<class APayload> CapturedPayloadClass;
+
+	bool bCapturedKamikazeMode = false;
+
 	bool bMissionSnapshotCaptured = false;
 
 	/** Records the starting line-up. No-op once it has run. */
