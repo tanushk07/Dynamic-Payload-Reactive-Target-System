@@ -131,6 +131,35 @@ protected:
 		bool bFromSweep,
 		const FHitResult& SweepResult);
 
+	/** Kamikaze detection for BLOCKING contact.
+	 *
+	 *  The drone root ships on the PhysicsActor profile and the targets are
+	 *  WorldDynamic, and the two block each other. A blocking pair produces a
+	 *  Hit, never an Overlap, so overlap alone could never see a drone ram a
+	 *  truck. Both are bound; whichever the collision setup produces wins. */
+	UFUNCTION()
+	void OnKamikazeHit(
+		UPrimitiveComponent* HitComp,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComp,
+		FVector NormalImpulse,
+		const FHitResult& Hit);
+
+	/** Shared gate + detonation for both contact paths.
+	 *  @return true if the kamikaze actually fired. */
+	bool TryKamikazeDetonate(AActor* OtherActor);
+
+	/** Finds the trigger mesh and binds contact events.
+	 *
+	 *  Called unconditionally, NOT gated on bKamikazeMode. The flag is set from
+	 *  the configuration screen long after BeginPlay has run, so binding only
+	 *  when it was already true meant kamikaze was never armed at all. The
+	 *  handlers re-check the flag at contact time, which is where the decision
+	 *  actually belongs. Safe to call more than once. */
+	void RefreshKamikazeBinding();
+
+	bool bKamikazeBindingDone = false;
+
 private:
 	UPrimitiveComponent* GetOwnerRootMesh() const;
 	void CreatePhysicsConstraint();

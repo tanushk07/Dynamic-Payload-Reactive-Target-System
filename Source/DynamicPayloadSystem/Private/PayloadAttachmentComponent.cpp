@@ -1,9 +1,11 @@
 #include "PayloadAttachmentComponent.h"
+#include "DynamicPayloadSystemModule.h"
 #include "Payload.h"
 #include "PayloadMissionManager.h"
 #include "DamagableComponent.h"
 #include "TargetActor.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
@@ -24,27 +26,9 @@ void UPayloadAttachmentComponent::BeginPlay()
 		break;
 	}
 
-	// Bind kamikaze hit detection to the trigger mesh
-	if (bKamikazeMode && !KamikazeTriggerMeshName.IsNone())
-	{
-		TArray<UActorComponent*> Children;
-		GetOwner()->GetComponents(UPrimitiveComponent::StaticClass(), Children);
-		for (UActorComponent* Child : Children)
-		{
-			if (Child->GetFName() == KamikazeTriggerMeshName)
-			{
-				KamikazeTriggerMesh = Cast<UPrimitiveComponent>(Child);
-				break;
-			}
-		}
-
-		if (KamikazeTriggerMesh)
-		{
-			KamikazeTriggerMesh->SetGenerateOverlapEvents(true);
-			KamikazeTriggerMesh->OnComponentBeginOverlap.AddDynamic(
-				this, &UPayloadAttachmentComponent::OnKamikazeOverlap);
-		}
-	}
+	// Always bind. bKamikazeMode is switched on by the configuration screen
+	// well after BeginPlay, so gating the binding on it armed nothing.
+	RefreshKamikazeBinding();
 
 	if (bAutoSpawnOnBeginPlay && PayloadClass)
 	{
@@ -314,6 +298,67 @@ FVector UPayloadAttachmentComponent::GetPayloadLocalOffset() const
 	return GetOwner()->GetActorRotation().UnrotateVector(WorldOffset);
 }
 
+void UPayloadAttachmentComponent::RefreshKamikazeBinding()
+{
+	if (bKamikazeBindingDone)
+		return;
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+		return;
+
+	if (!KamikazeTriggerMeshName.IsNone())
+	{
+		TArray<UActorComponent*> Children;
+		Owner->GetComponents(UPrimitiveComponent::StaticClass(), Children);
+		for (UActorComponent* Child : Children)
+		{
+			if (Child->GetFName() == KamikazeTriggerMeshName)
+			{
+				KamikazeTriggerMesh = Cast<UPrimitiveComponent>(Child);
+				break;
+			}
+		}
+	}
+
+	// Fall back to the root body rather than arming nothing. A misspelled or
+	// empty KamikazeTriggerMeshName used to disable kamikaze silently.
+	if (!KamikazeTriggerMesh)
+	{
+		KamikazeTriggerMesh = GetOwnerRootMesh();
+	}
+
+	if (!KamikazeTriggerMesh)
+	{
+		UE_LOG(LogDynamicPayload, Warning,
+			TEXT("[Payload] %s has no usable kamikaze trigger mesh ('%s' not found and no root primitive); kamikaze cannot fire."),
+			*Owner->GetName(), *KamikazeTriggerMeshName.ToString());
+		return;
+	}
+
+	KamikazeTriggerMesh->SetGenerateOverlapEvents(true);
+
+	// Simulating bodies only report blocking contact when this is on, and it
+	// is off by default. Without it the Hit path below never fires either.
+	KamikazeTriggerMesh->SetNotifyRigidBodyCollision(true);
+
+	// A skeletal mesh does not simulate through its own BodyInstance - it
+	// simulates through the per-bone bodies of its physics asset, and the call
+	// above never reaches those. The drone's root is exactly this case, so
+	// without this the Hit path stays silent no matter what else is set.
+	if (USkeletalMeshComponent* SkeletalTrigger = Cast<USkeletalMeshComponent>(KamikazeTriggerMesh))
+	{
+		SkeletalTrigger->SetAllBodiesNotifyRigidBodyCollision(true);
+	}
+
+	KamikazeTriggerMesh->OnComponentBeginOverlap.AddDynamic(
+		this, &UPayloadAttachmentComponent::OnKamikazeOverlap);
+	KamikazeTriggerMesh->OnComponentHit.AddDynamic(
+		this, &UPayloadAttachmentComponent::OnKamikazeHit);
+
+	bKamikazeBindingDone = true;
+}
+
 void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	UPrimitiveComponent* OverlappedComp,
 	AActor* OtherActor,
@@ -322,17 +367,32 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
+	TryKamikazeDetonate(OtherActor);
+}
+
+void UPayloadAttachmentComponent::OnKamikazeHit(
+	UPrimitiveComponent* HitComp,
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComp,
+	FVector NormalImpulse,
+	const FHitResult& Hit)
+{
+	TryKamikazeDetonate(OtherActor);
+}
+
+bool UPayloadAttachmentComponent::TryKamikazeDetonate(AActor* OtherActor)
+{
 	if (!OtherActor || OtherActor == GetOwner())
-		return;
+		return false;
 
 	if (AttachedPayload && OtherActor == AttachedPayload)
-		return;
+		return false;
 
 	if (!bKamikazeMode)
-		return;
+		return false;
 
 	if (!AttachedPayload)
-		return;
+		return false;
 
 	// Velocity threshold check
 	UPrimitiveComponent* OwnerRoot = GetOwnerRootMesh();
@@ -340,16 +400,16 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	{
 		const float Speed_ms = OwnerRoot->GetComponentVelocity().Size() / 100.0f;
 		if (Speed_ms < MinKamikazeSpeed_ms)
-			return;
+			return false;
 	}
 
 	UDamagableComponent* DamageComp = OtherActor->FindComponentByClass<UDamagableComponent>();
 	if (!DamageComp)
-		return;
+		return false;
 
 	ATargetActor* Target = Cast<ATargetActor>(OtherActor);
 	if (Target && !Target->bIsMissionTarget)
-		return;
+		return false;
 
 	DestroyPhysicsConstraint();
 
@@ -383,6 +443,7 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	}
 
 	GetOwner()->Destroy();
+	return true;
 }
 
 UPrimitiveComponent* UPayloadAttachmentComponent::GetOwnerRootMesh() const
