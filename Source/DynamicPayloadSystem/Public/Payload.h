@@ -19,7 +19,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	UPROPERTY(VisibleAnywhere, Category = "Payload")
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Payload")
 	UStaticMeshComponent* PayloadMesh;
 
 	UPROPERTY(EditAnywhere, Category = "Explosion")
