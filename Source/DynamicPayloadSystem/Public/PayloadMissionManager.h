@@ -150,6 +150,22 @@ public:
 		EPayloadMissionState, NewState
 	);
 
+	/** Fires for each second of the pre-mission countdown, starting at
+	 *  CountdownStartTime and ending at 1.
+	 *
+	 *  The countdown exists so the world settles and the player can orient
+	 *  before the clock starts, but it used to be invisible: this is what lets
+	 *  a UI draw "3, 2, 1" over it, and what tells game code when to lock the
+	 *  player's input.
+	 *
+	 *  Zero is deliberately never broadcast - the mission begins on that beat.
+	 *  Bind OnMissionStateChanged for the "GO" moment and it will land exactly
+	 *  as control returns, with no dead second in between. */
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+		FOnMissionCountdown,
+		int32, SecondsRemaining
+	);
+
 	/** Broadcast once when the mission resolves (Success or Failed). Carries the
 	 *  end-of-mission summary so a results screen can display it without polling. */
 	DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
@@ -168,6 +184,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Mission")
 	FOnMissionResolved OnMissionResolved;
+
+	UPROPERTY(BlueprintAssignable, Category = "Mission")
+	FOnMissionCountdown OnMissionCountdown;
 
 	UFUNCTION(BlueprintCallable, Category = "Mission")
 	void NotifyAttemptConsumed();
@@ -196,7 +215,9 @@ public:
 	void NotifyKamikazeTriggered();
 
 	FTimerHandle CountdownTimerHandle;
-	UPROPERTY(EditAnywhere, Category = "Mission")
+
+	/** Seconds of countdown before the mission clock starts. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mission")
 	int32 CountdownStartTime = 3;
 	int32 CountdownTimeRemaining;
 
