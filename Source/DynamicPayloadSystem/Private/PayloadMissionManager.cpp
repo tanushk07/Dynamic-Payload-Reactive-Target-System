@@ -89,6 +89,11 @@ void APayloadMissionManager::HandleMissionStart()
 
 	CountdownTimeRemaining = CountdownStartTime;
 
+	// Announce the opening number now rather than waiting a second for the
+	// first tick, otherwise a countdown UI would come up blank and only catch
+	// up from CountdownStartTime - 1.
+	OnMissionCountdown.Broadcast(CountdownTimeRemaining);
+
 	GetWorld()->GetTimerManager().SetTimer(
 		CountdownTimerHandle,
 		this,
@@ -102,11 +107,21 @@ void APayloadMissionManager::TickCountdown()
 {
 	CountdownTimeRemaining--;
 
-	if (CountdownTimeRemaining < 0)
+	// Start ON zero, not after it. Counting down to < 0 spent an extra second
+	// sitting on 0, so a CountdownStartTime of 3 ran for 4 seconds and any UI
+	// following along had a dead beat between "1" and the mission actually
+	// starting.
+	if (CountdownTimeRemaining <= 0)
 	{
 		GetWorld()->GetTimerManager().ClearTimer(CountdownTimerHandle);
+
+		// StartMission broadcasts OnMissionStateChanged(InProgress), which is
+		// the "GO" beat - so zero is not broadcast here. See FOnMissionCountdown.
 		StartMission();
+		return;
 	}
+
+	OnMissionCountdown.Broadcast(CountdownTimeRemaining);
 }
 
 void APayloadMissionManager::StartMission()
