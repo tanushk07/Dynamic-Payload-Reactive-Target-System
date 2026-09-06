@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "1.0.0",
+	"Version": 2,
+	"VersionName": "1.1.0",
 	"FriendlyName": "Dynamic Payload & Reactive Target System",
 	"Description": "Modular payload delivery, radial damage, AI convoy movement, and mission management for Unreal Engine 5.",
 	"Category": "Gameplay/Combat",
