@@ -192,6 +192,17 @@ void APayloadMissionManager::RegisterMissionTarget(ATargetActor* Target)
 
 	DamageableTargets.Add(Target);
 
+	// Drop any existing subscription before adding one. A target can arrive here
+	// still carrying a binding from a previous mission - RetryMission can only
+	// unbind what is still listed in DamageableTargets, and destroyed targets
+	// were struck off that list as they died. Removing first makes registration
+	// idempotent no matter what came before, so a target is never subscribed
+	// twice and OnTargetDamageTaken cannot count the same hit more than once.
+	DC->OnStructuralStateChanged.RemoveDynamic(
+		this, &APayloadMissionManager::OnTargetStructuralStateChanged);
+	DC->OnDamageTaken.RemoveDynamic(
+		this, &APayloadMissionManager::OnTargetDamageTaken);
+
 	DC->OnStructuralStateChanged.AddDynamic(
 		this, &APayloadMissionManager::OnTargetStructuralStateChanged);
 	DC->OnDamageTaken.AddDynamic(
@@ -950,22 +961,35 @@ void APayloadMissionManager::RetryMission()
 	TargetsDestroyedCount = 0;
 	InitialTargetCount = 0;
 
+	// Unbind from the whole original line-up, not just DamageableTargets. Targets
+	// destroyed during the mission were removed from that list as they died, so
+	// iterating it alone would leave their bindings in place - which is exactly
+	// the state RegisterMissionTarget now defends against.
+	auto UnbindFrom = [this](AActor* Actor)
+	{
+		if (!IsValid(Actor))
+			return;
+
+		if (UDamagableComponent* DC = Actor->FindComponentByClass<UDamagableComponent>())
+		{
+			DC->OnStructuralStateChanged.RemoveDynamic(
+				this,
+				&APayloadMissionManager::OnTargetStructuralStateChanged
+			);
+			DC->OnDamageTaken.RemoveDynamic(
+				this,
+				&APayloadMissionManager::OnTargetDamageTaken
+			);
+		}
+	};
+
 	for (AActor* Actor : DamageableTargets)
 	{
-		if (Actor)
-		{
-			if (UDamagableComponent* DC = Actor->FindComponentByClass<UDamagableComponent>())
-			{
-				DC->OnStructuralStateChanged.RemoveDynamic(
-					this,
-					&APayloadMissionManager::OnTargetStructuralStateChanged
-				);
-				DC->OnDamageTaken.RemoveDynamic(
-					this,
-					&APayloadMissionManager::OnTargetDamageTaken
-				);
-			}
-		}
+		UnbindFrom(Actor);
+	}
+	for (const FMissionTargetSnapshot& Snapshot : MissionTargetSnapshots)
+	{
+		UnbindFrom(Snapshot.LiveActor.Get());
 	}
 	DamageableTargets.Empty();
 
