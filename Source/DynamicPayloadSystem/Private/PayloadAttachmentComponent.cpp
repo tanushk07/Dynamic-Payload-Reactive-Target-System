@@ -367,7 +367,7 @@ void UPayloadAttachmentComponent::OnKamikazeOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	TryKamikazeDetonate(OtherActor);
+	TryKamikazeDetonate(OtherActor, OtherComp);
 }
 
 void UPayloadAttachmentComponent::OnKamikazeHit(
@@ -377,13 +377,34 @@ void UPayloadAttachmentComponent::OnKamikazeHit(
 	FVector NormalImpulse,
 	const FHitResult& Hit)
 {
-	TryKamikazeDetonate(OtherActor);
+	TryKamikazeDetonate(OtherActor, OtherComp);
 }
 
-bool UPayloadAttachmentComponent::TryKamikazeDetonate(AActor* OtherActor)
+bool UPayloadAttachmentComponent::TryKamikazeDetonate(
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComp)
 {
 	if (!OtherActor || OtherActor == GetOwner())
 		return false;
+
+	// Only solid geometry counts as a strike. Targets routinely carry
+	// query-only decoration - health widgets, selection volumes, audio ranges -
+	// that overlaps the drone long before the hull does and can extend metres
+	// past the vehicle. Those used to detonate the payload in open air near the
+	// target, which read as the fuze going off at random.
+	//
+	// Physics collision is the discriminator: a hull has it, a UI widget does
+	// not. Checked here rather than in the handlers so the overlap and hit
+	// paths cannot diverge.
+	if (OtherComp)
+	{
+		const ECollisionEnabled::Type Solidity = OtherComp->GetCollisionEnabled();
+		if (Solidity != ECollisionEnabled::QueryAndPhysics &&
+			Solidity != ECollisionEnabled::PhysicsOnly)
+		{
+			return false;
+		}
+	}
 
 	if (AttachedPayload && OtherActor == AttachedPayload)
 		return false;

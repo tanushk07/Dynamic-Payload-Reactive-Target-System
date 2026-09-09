@@ -147,7 +147,14 @@ protected:
 
 	/** Shared gate + detonation for both contact paths.
 	 *  @return true if the kamikaze actually fired. */
-	bool TryKamikazeDetonate(AActor* OtherActor);
+	/** Shared body of both contact handlers.
+	 *
+	 *  OtherComp matters: a target's collision is not only its hull. Decoration
+	 *  such as a floating health widget is query-only and can sit metres away
+	 *  from the vehicle, so judging on OtherActor alone detonates the payload
+	 *  near the target rather than on it. Pass the component that actually
+	 *  registered the contact; nullptr skips the solidity test. */
+	bool TryKamikazeDetonate(AActor* OtherActor, UPrimitiveComponent* OtherComp);
 
 	/** Finds the trigger mesh and binds contact events.
 	 *
