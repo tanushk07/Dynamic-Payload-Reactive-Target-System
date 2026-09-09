@@ -147,6 +147,11 @@ protected:
 
 	/** Shared gate + detonation for both contact paths.
 	 *  @return true if the kamikaze actually fired. */
+	virtual void TickComponent(
+		float DeltaTime,
+		ELevelTick TickType,
+		FActorComponentTickFunction* ThisTickFunction) override;
+
 	/** Shared body of both contact handlers.
 	 *
 	 *  OtherComp matters: a target's collision is not only its hull. Decoration
