@@ -12,7 +12,10 @@
 
 UPayloadAttachmentComponent::UPayloadAttachmentComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// Ticks only to re-test an overlap that is already in progress - see
+	// TickComponent. Enabled unconditionally because bKamikazeMode is switched
+	// on by game code long after construction.
+	PrimaryComponentTick.bCanEverTick = true;
 }
 
 void UPayloadAttachmentComponent::BeginPlay()
@@ -296,6 +299,47 @@ FVector UPayloadAttachmentComponent::GetPayloadLocalOffset() const
 
 	FVector WorldOffset = AttachedPayload->GetActorLocation() - GetOwner()->GetActorLocation();
 	return GetOwner()->GetActorRotation().UnrotateVector(WorldOffset);
+}
+
+void UPayloadAttachmentComponent::TickComponent(
+	float DeltaTime,
+	ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// Re-arm a contact that is already happening.
+	//
+	// OnComponentBeginOverlap fires once, on entry. A trigger volume wide
+	// enough to be useful is crossed while still manoeuvring, so that single
+	// frame is usually below the speed threshold - and once the overlap has
+	// begun, no further event arrives however hard the target is then rammed.
+	// Re-testing here turns a one-shot into the continuous condition it was
+	// always meant to be.
+	if (!bKamikazeMode || !AttachedPayload || !KamikazeTriggerMesh)
+		return;
+
+	// Cheap gate first: below the threshold there is nothing to consider, and
+	// this runs every frame.
+	const UPrimitiveComponent* OwnerRoot = GetOwnerRootMesh();
+	if (OwnerRoot &&
+		OwnerRoot->GetComponentVelocity().Size() / 100.0f < MinKamikazeSpeed_ms)
+	{
+		return;
+	}
+
+	TArray<UPrimitiveComponent*> Overlaps;
+	KamikazeTriggerMesh->GetOverlappingComponents(Overlaps);
+	for (UPrimitiveComponent* Other : Overlaps)
+	{
+		if (!Other)
+			continue;
+
+		// TryKamikazeDetonate destroys the owner on success, so stop touching
+		// anything the moment it reports a hit.
+		if (TryKamikazeDetonate(Other->GetOwner(), Other))
+			return;
+	}
 }
 
 void UPayloadAttachmentComponent::RefreshKamikazeBinding()
