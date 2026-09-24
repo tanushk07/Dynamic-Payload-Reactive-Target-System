@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "Explosive.h"
 #include "DamagableComponent.h"
 #include "DynamicPayloadSystemModule.h"

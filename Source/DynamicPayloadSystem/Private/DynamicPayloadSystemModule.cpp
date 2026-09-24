@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "DynamicPayloadSystemModule.h"
 
 DEFINE_LOG_CATEGORY(LogDynamicPayload);

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Tanushk. MIT License.
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
 
 using UnrealBuildTool;
 using System.IO;

@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "Payload.h"
 #include "Explosive.h"
 #include "DynamicPayloadSystemModule.h"
@@ -25,10 +27,10 @@ void APayload::BeginPlay()
 	Super::BeginPlay();
 
 	// Cache mission manager reference once
-	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	TActorIterator<APayloadMissionManager> MissionManagerIt(GetWorld());
+	if (MissionManagerIt)
 	{
-		CachedMissionManager = *It;
-		break;
+		CachedMissionManager = *MissionManagerIt;
 	}
 }
 

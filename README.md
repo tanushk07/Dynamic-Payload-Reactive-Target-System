@@ -485,4 +485,4 @@ Core, CoreUObject, Engine, Niagara, PhysicsCore
 
 ## License
 
-MIT License — free for personal and commercial use.
+Licensed under the Fab License Agreement.

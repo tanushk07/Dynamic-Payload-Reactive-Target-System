@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "PatrolAreaVolume.h"
 #include "Components/BoxComponent.h"
 

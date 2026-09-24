@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "MovableTargetComponent.h"
 #include "TargetBehaviorComponent.h"
 #include "DynamicPayloadSystemModule.h"

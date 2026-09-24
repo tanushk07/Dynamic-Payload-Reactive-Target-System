@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "TargetBehaviorComponent.h"
 #include "DamagableComponent.h"
 #include "GameFramework/Actor.h"

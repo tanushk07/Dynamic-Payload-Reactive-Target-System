@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "PayloadMissionManager.h"
 #include "DamagableComponent.h"
 #include "DynamicPayloadSystemModule.h"
@@ -781,10 +783,10 @@ void APayloadMissionManager::ResetPlayerToStart()
 	// Where home is. A PlayerStart in the level wins; the transform captured at
 	// mission start is the fallback for levels without one.
 	FTransform Destination = PlayerRestartTransform;
-	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	TActorIterator<APlayerStart> PlayerStartIt(World);
+	if (PlayerStartIt)
 	{
-		Destination = It->GetActorTransform();
-		break;
+		Destination = PlayerStartIt->GetActorTransform();
 	}
 
 	APawn* OldPawn = PC->GetPawn();

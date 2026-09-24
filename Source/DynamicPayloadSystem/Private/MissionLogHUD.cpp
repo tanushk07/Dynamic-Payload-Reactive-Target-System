@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "MissionLogHUD.h"
 
 void AMissionLogHUD::PushGameLog_Implementation(const FGameLogEntry& Entry)

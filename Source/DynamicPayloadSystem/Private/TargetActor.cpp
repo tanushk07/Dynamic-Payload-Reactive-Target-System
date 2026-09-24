@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "TargetActor.h"
 #include "DamagableComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -76,10 +78,10 @@ void ATargetActor::BeginPlay()
 	// spawn before mission start are picked up by StartMission's iterator.
 	if (bIsMissionTarget)
 	{
-		for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+		TActorIterator<APayloadMissionManager> MissionManagerIt(GetWorld());
+		if (MissionManagerIt)
 		{
-			It->RegisterMissionTarget(this);
-			break;
+			MissionManagerIt->RegisterMissionTarget(this);
 		}
 	}
 }

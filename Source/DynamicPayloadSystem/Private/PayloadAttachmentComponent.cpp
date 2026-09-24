@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "PayloadAttachmentComponent.h"
 #include "DynamicPayloadSystemModule.h"
 #include "Payload.h"
@@ -23,10 +25,10 @@ void UPayloadAttachmentComponent::BeginPlay()
 	Super::BeginPlay();
 
 	// Cache mission manager reference once
-	for (TActorIterator<APayloadMissionManager> It(GetWorld()); It; ++It)
+	TActorIterator<APayloadMissionManager> MissionManagerIt(GetWorld());
+	if (MissionManagerIt)
 	{
-		CachedMissionManager = *It;
-		break;
+		CachedMissionManager = *MissionManagerIt;
 	}
 
 	// Always bind. bKamikazeMode is switched on by the configuration screen

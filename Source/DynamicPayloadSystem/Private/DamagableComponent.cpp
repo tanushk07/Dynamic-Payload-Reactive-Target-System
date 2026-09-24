@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #include "DamagableComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "DynamicPayloadSystemModule.h"

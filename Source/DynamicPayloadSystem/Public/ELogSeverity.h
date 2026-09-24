@@ -1,3 +1,5 @@
+// Copyright Tanushk Nirmal 2026 All Rights Reserved.
+
 #pragma once
 
 #include "ELogSeverity.generated.h"
